@@ -842,7 +842,8 @@ function WeatherPanel({
                 onPlayingChange(false);
                 onFrameIndex(Number(e.target.value));
               }}
-              className="flex-1 accent-sky-400"
+              className="flex-1 hud-slider"
+              style={{ ["--hud-fill" as string]: `${Math.round((frameIndex / Math.max(1, frames.length - 1)) * 100)}%` }}
             />
           </div>
 
@@ -868,7 +869,8 @@ function WeatherPanel({
               step={0.05}
               value={opacity}
               onChange={(e) => onOpacityChange(Number(e.target.value))}
-              className="w-24 accent-sky-400"
+              className="w-24 hud-slider"
+              style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
             />
             <span className="w-8 text-right text-[10px] text-neutral-400">
               {Math.round(opacity * 100)}%
@@ -917,7 +919,8 @@ function RailwayPanel({
               step={0.05}
               value={opacity}
               onChange={(e) => onOpacityChange(Number(e.target.value))}
-              className="w-24 accent-sky-400"
+              className="w-24 hud-slider"
+              style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
             />
             <span className="w-8 text-right text-[10px] text-neutral-400">
               {Math.round(opacity * 100)}%
@@ -1072,7 +1075,8 @@ function TimelinePanel({
               step={0.05}
               value={opacity}
               onChange={(e) => onOpacityChange(Number(e.target.value))}
-              className="w-24 accent-sky-400"
+              className="w-24 hud-slider"
+              style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
             />
             <span className="w-8 text-right text-[10px] text-neutral-400">
               {Math.round(opacity * 100)}%

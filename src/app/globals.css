@@ -206,3 +206,66 @@ body {
   box-shadow: 0 0 6px var(--hud-accent-glow);
   transform: translateX(8px);
 }
+
+/* HUD sliders — square thumb, thin track, tick marks */
+input[type="range"].hud-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="range"].hud-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  background: linear-gradient(to right,
+    var(--hud-accent) 0%,
+    var(--hud-accent) var(--hud-fill, 50%),
+    #374151 var(--hud-fill, 50%),
+    #374151 100%);
+  background-size: 100% 2px, 8px 10px;
+  background-image:
+    linear-gradient(to right,
+      var(--hud-accent) 0%,
+      var(--hud-accent) var(--hud-fill, 50%),
+      #374151 var(--hud-fill, 50%),
+      #374151 100%),
+    repeating-linear-gradient(to right,
+      transparent 0,
+      transparent 9px,
+      rgba(156, 163, 175, 0.35) 9px,
+      rgba(156, 163, 175, 0.35) 10px);
+  background-repeat: no-repeat;
+  background-position: 0 center, 0 center;
+}
+
+input[type="range"].hud-slider::-moz-range-track {
+  height: 2px;
+  background: #374151;
+}
+
+input[type="range"].hud-slider::-moz-range-progress {
+  height: 2px;
+  background: var(--hud-accent);
+}
+
+input[type="range"].hud-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 12px;
+  background: var(--hud-accent);
+  border: 1px solid #0a0a0b;
+  border-radius: 1px;
+  margin-top: -5px;
+  box-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+input[type="range"].hud-slider::-moz-range-thumb {
+  width: 10px;
+  height: 12px;
+  background: var(--hud-accent);
+  border: 1px solid #0a0a0b;
+  border-radius: 1px;
+  box-shadow: 0 0 6px var(--hud-accent-glow);
+}
