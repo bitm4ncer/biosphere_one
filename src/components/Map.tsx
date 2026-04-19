@@ -12,6 +12,7 @@ import type { Bbox, Credentials } from "@/types/sentinel";
 import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
 import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
+import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 
 const CLOUDS_DAYS_BACK = 7;
 const CLOUDS_ANIM_INTERVAL_MS = 900;
@@ -27,6 +28,8 @@ const TIMELINE_DAYS_BACK = 365;
 const WEATHER_SOURCE_ID = "weather";
 const WEATHER_LAYER_ID = "weather-layer";
 const MIN_FETCH_ZOOM = 8;
+const RAILWAY_SOURCE_ID = "railway";
+const RAILWAY_LAYER_ID = "railway-layer";
 
 interface ViewState {
   center: [number, number];
@@ -108,6 +111,35 @@ function updateWeatherOpacity(map: MLMap, opacity: number) {
 function removeWeatherLayer(map: MLMap) {
   if (map.getLayer(WEATHER_LAYER_ID)) map.removeLayer(WEATHER_LAYER_ID);
   if (map.getSource(WEATHER_SOURCE_ID)) map.removeSource(WEATHER_SOURCE_ID);
+}
+
+function ensureRailwayLayer(map: MLMap, opacity: number) {
+  if (map.getLayer(RAILWAY_LAYER_ID)) return;
+  if (map.getSource(RAILWAY_SOURCE_ID)) map.removeSource(RAILWAY_SOURCE_ID);
+  map.addSource(RAILWAY_SOURCE_ID, {
+    type: "raster",
+    tiles: RAILWAY_TILE_URLS,
+    tileSize: 256,
+    maxzoom: RAILWAY_MAX_ZOOM,
+    attribution: RAILWAY_ATTRIBUTION,
+  });
+  map.addLayer({
+    id: RAILWAY_LAYER_ID,
+    type: "raster",
+    source: RAILWAY_SOURCE_ID,
+    paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
+  });
+}
+
+function updateRailwayOpacity(map: MLMap, opacity: number) {
+  if (map.getLayer(RAILWAY_LAYER_ID)) {
+    map.setPaintProperty(RAILWAY_LAYER_ID, "raster-opacity", opacity);
+  }
+}
+
+function removeRailwayLayer(map: MLMap) {
+  if (map.getLayer(RAILWAY_LAYER_ID)) map.removeLayer(RAILWAY_LAYER_ID);
+  if (map.getSource(RAILWAY_SOURCE_ID)) map.removeSource(RAILWAY_SOURCE_ID);
 }
 
 function bboxCoordinates(
