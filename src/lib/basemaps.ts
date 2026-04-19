@@ -17,6 +17,14 @@ const CARTO_ATTRIB =
 const GIBS_ATTRIB =
   '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a>';
 
+const ESRI_ATTRIB =
+  '<a href="https://www.esri.com/" target="_blank" rel="noreferrer">Esri</a>, Maxar, Earthstar Geographics, and the GIS User Community';
+
+const OSM_ATTRIB =
+  '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors';
+
+const OPENTOPO_ATTRIB = `${OSM_ATTRIB}, SRTM | © <a href="https://opentopomap.org/" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)`;
+
 export const BASEMAPS: Basemap[] = [
   {
     id: "s2cloudless-2024",
@@ -35,6 +43,14 @@ export const BASEMAPS: Basemap[] = [
     attribution: `${EOX_ATTRIB} 2023`,
   },
   {
+    id: "esri-imagery",
+    label: "Satellite · HD",
+    kind: "raster",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    maxzoom: 19,
+    attribution: ESRI_ATTRIB,
+  },
+  {
     id: "night",
     label: "Night · Black Marble",
     kind: "raster",
@@ -49,6 +65,22 @@ export const BASEMAPS: Basemap[] = [
     url: "https://tiles.maps.eox.at/wmts/1.0.0/terrain-light_3857/default/g/{z}/{y}/{x}.jpg",
     maxzoom: 11,
     attribution: EOX_ATTRIB,
+  },
+  {
+    id: "opentopo",
+    label: "Topographic",
+    kind: "raster",
+    url: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+    maxzoom: 17,
+    attribution: OPENTOPO_ATTRIB,
+  },
+  {
+    id: "voyager",
+    label: "Voyager",
+    kind: "style",
+    url: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+    maxzoom: 19,
+    attribution: CARTO_ATTRIB,
   },
   {
     id: "streets-dark",

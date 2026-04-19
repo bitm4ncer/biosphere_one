@@ -11,7 +11,7 @@ import { searchCatalog, type Snapshot } from "@/lib/sentinel/catalog";
 import type { Bbox, Credentials } from "@/types/sentinel";
 import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
-import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
+import { gibsDateNDaysAgo, gibsTileUrl, gibsYesterday, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 import { ProjectionControl } from "./ProjectionControl";
@@ -35,6 +35,10 @@ const WEATHER_LAYER_ID = "weather-layer";
 const MIN_FETCH_ZOOM = 8;
 const RAILWAY_SOURCE_ID = "railway";
 const RAILWAY_LAYER_ID = "railway-layer";
+const FIRES_SOURCE_ID = "fires";
+const FIRES_LAYER_ID = "fires-layer";
+const NDVI_SOURCE_ID = "ndvi";
+const NDVI_LAYER_ID = "ndvi-layer";
 
 interface ViewState {
   center: [number, number];
@@ -144,6 +148,51 @@ function removeRailwayLayer(map: MLMap) {
   if (map.getLayer(RAILWAY_LAYER_ID)) map.removeLayer(RAILWAY_LAYER_ID);
   if (map.getSource(RAILWAY_SOURCE_ID)) map.removeSource(RAILWAY_SOURCE_ID);
 }
+
+const GIBS_MAX_ZOOM = 9;
+
+function ensureGibsOverlay(
+  map: MLMap,
+  sourceId: string,
+  layerId: string,
+  url: string,
+  opacity: number,
+  attribution: string,
+) {
+  if (map.getLayer(layerId)) return;
+  if (map.getSource(sourceId)) map.removeSource(sourceId);
+  map.addSource(sourceId, {
+    type: "raster",
+    tiles: [url],
+    tileSize: 256,
+    maxzoom: GIBS_MAX_ZOOM,
+    attribution,
+  });
+  map.addLayer({
+    id: layerId,
+    type: "raster",
+    source: sourceId,
+    maxzoom: GIBS_MAX_ZOOM + 1,
+    paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
+  });
+}
+
+function updateGibsOverlayOpacity(map: MLMap, layerId: string, opacity: number) {
+  if (map.getLayer(layerId)) {
+    map.setPaintProperty(layerId, "raster-opacity", opacity);
+  }
+}
+
+function removeGibsOverlay(map: MLMap, sourceId: string, layerId: string) {
+  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  if (map.getSource(sourceId)) map.removeSource(sourceId);
+}
+
+const FIRES_ATTRIBUTION =
+  '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · VIIRS SNPP Thermal Anomalies 375m';
+
+const NDVI_ATTRIBUTION =
+  '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · MODIS Terra NDVI 8-day';
 
 function bboxCoordinates(
   bbox: Bbox,
@@ -271,12 +320,20 @@ export function LiveMap({ credentials }: Props) {
     weatherOpacity,
     railwayOn,
     railwayOpacity,
+    firesOn,
+    firesOpacity,
+    ndviOn,
+    ndviOpacity,
     setBasemapId: setActive,
     setProjection,
     setWeatherOn,
     setWeatherOpacity,
     setRailwayOn,
     setRailwayOpacity,
+    setFiresOn,
+    setFiresOpacity,
+    setNdviOn,
+    setNdviOpacity,
   } = useSettings();
   const [view, setView] = useState<ViewState>({
     center: [6.775, 51.2277],
@@ -654,6 +711,76 @@ export function LiveMap({ credentials }: Props) {
   }, [railwayOn, railwayOpacity]);
 
   useEffect(() => {
+    if (!firesOn) {
+      const map = mapRef.current;
+      if (map) removeGibsOverlay(map, FIRES_SOURCE_ID, FIRES_LAYER_ID);
+    }
+  }, [firesOn]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !firesOn) return;
+    const url = gibsTileUrl({
+      layer: "VIIRS_SNPP_Thermal_Anomalies_375m_All",
+      date: gibsYesterday(),
+      format: "png",
+    });
+    const apply = () =>
+      ensureGibsOverlay(map, FIRES_SOURCE_ID, FIRES_LAYER_ID, url, firesOpacity, FIRES_ATTRIBUTION);
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firesOn, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !firesOn) return;
+    updateGibsOverlayOpacity(map, FIRES_LAYER_ID, firesOpacity);
+  }, [firesOn, firesOpacity]);
+
+  useEffect(() => {
+    if (!ndviOn) {
+      const map = mapRef.current;
+      if (map) removeGibsOverlay(map, NDVI_SOURCE_ID, NDVI_LAYER_ID);
+    }
+  }, [ndviOn]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ndviOn) return;
+    const url = gibsTileUrl({
+      layer: "MODIS_Terra_NDVI_8Day",
+      date: gibsDateNDaysAgo(10),
+      format: "png",
+    });
+    const apply = () =>
+      ensureGibsOverlay(map, NDVI_SOURCE_ID, NDVI_LAYER_ID, url, ndviOpacity, NDVI_ATTRIBUTION);
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ndviOn, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ndviOn) return;
+    updateGibsOverlayOpacity(map, NDVI_LAYER_ID, ndviOpacity);
+  }, [ndviOn, ndviOpacity]);
+
+  useEffect(() => {
     if (!sidebarOpen) return;
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
     if (!isMobile) return;
@@ -909,6 +1036,22 @@ export function LiveMap({ credentials }: Props) {
           opacity={railwayOpacity}
           onOpacityChange={setRailwayOpacity}
         />
+        <GibsOverlayPanel
+          label="Fires"
+          caption="VIIRS SNPP · 375m · yesterday"
+          enabled={firesOn}
+          onToggle={setFiresOn}
+          opacity={firesOpacity}
+          onOpacityChange={setFiresOpacity}
+        />
+        <GibsOverlayPanel
+          label="NDVI"
+          caption="MODIS Terra · 8-day · 1km"
+          enabled={ndviOn}
+          onToggle={setNdviOn}
+          opacity={ndviOpacity}
+          onOpacityChange={setNdviOpacity}
+        />
       </div>
     </div>
   );
@@ -1023,6 +1166,61 @@ function WeatherPanel({
           </div>
         </>
       )}
+      </div>
+    </HudPanel>
+  );
+}
+
+interface GibsOverlayPanelProps {
+  label: string;
+  caption: string;
+  enabled: boolean;
+  onToggle: (on: boolean) => void;
+  opacity: number;
+  onOpacityChange: (o: number) => void;
+}
+
+function GibsOverlayPanel({
+  label,
+  caption,
+  enabled,
+  onToggle,
+  opacity,
+  onOpacityChange,
+}: GibsOverlayPanelProps) {
+  return (
+    <HudPanel label={label}>
+      <div className="flex flex-col items-stretch gap-2">
+        <div className="flex items-center justify-between">
+          <span />
+          <LedToggle
+            enabled={enabled}
+            onToggle={() => onToggle(!enabled)}
+            label={enabled ? "Turn off" : "Turn on"}
+          />
+        </div>
+
+        {enabled && (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase text-neutral-500">Opacity</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={opacity}
+                onChange={(e) => onOpacityChange(Number(e.target.value))}
+                className="w-24 hud-slider"
+                style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
+              />
+              <span className="w-8 text-right text-[10px] text-neutral-400">
+                {Math.round(opacity * 100)}%
+              </span>
+            </div>
+            <div className="text-[10px] text-neutral-500">{caption}</div>
+          </>
+        )}
       </div>
     </HudPanel>
   );
