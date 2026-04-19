@@ -28,15 +28,20 @@ export async function requestCompassPermission(): Promise<boolean> {
 
 interface AppleOrientationEvent extends DeviceOrientationEvent {
   webkitCompassHeading?: number;
+  webkitCompassAccuracy?: number;
 }
 
 /**
  * Subscribes to compass heading in degrees (0 = North, clockwise).
+ * Second argument is iOS `webkitCompassAccuracy` in degrees (or `null`
+ * if not reported by the platform). A value of `-1` means the
+ * magnetometer is uncalibrated and the heading is unreliable — on iOS
+ * this is fixed by waving the phone in a figure-8 motion.
  * Returns an unsubscribe function. Safe to call even if permission was
  * denied — it just never fires.
  */
 export function subscribeCompass(
-  onHeading: (degrees: number) => void,
+  onHeading: (degrees: number, accuracyDeg: number | null) => void,
 ): () => void {
   if (typeof window === "undefined") return () => {};
 
@@ -49,12 +54,16 @@ export function subscribeCompass(
     const event = raw as AppleOrientationEvent;
     const apple = event.webkitCompassHeading;
     if (typeof apple === "number" && !Number.isNaN(apple)) {
-      onHeading(apple);
+      const accuracy =
+        typeof event.webkitCompassAccuracy === "number"
+          ? event.webkitCompassAccuracy
+          : null;
+      onHeading(apple, accuracy);
       return;
     }
     if (event.absolute && typeof event.alpha === "number") {
       const heading = (360 - event.alpha) % 360;
-      onHeading(heading);
+      onHeading(heading, null);
     }
   };
 

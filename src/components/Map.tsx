@@ -296,6 +296,7 @@ export function LiveMap({ credentials }: Props) {
     return window.matchMedia("(min-width: 768px)").matches;
   });
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
+  const [geoHeading, setGeoHeading] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -433,12 +434,23 @@ export function LiveMap({ credentials }: Props) {
       compassStarted = true;
       const granted = await requestCompassPermission();
       if (!granted) return;
-      const unsub = subscribeCompass((heading) => {
+      let lastRounded = -1;
+      const unsub = subscribeCompass((heading, accuracy) => {
         const marker = liveMarkerRef.current;
         const cone = coneRef.current;
         if (!marker || !cone) return;
         marker.setRotation(heading);
         cone.hidden = false;
+        const rounded = Math.round(heading);
+        if (rounded === lastRounded) return;
+        lastRounded = rounded;
+        const accStr =
+          accuracy === -1
+            ? " (uncal)"
+            : typeof accuracy === "number" && accuracy >= 0
+              ? ` ±${Math.round(accuracy)}°`
+              : "";
+        setGeoHeading(`${rounded}°${accStr}`);
       });
       compassUnsubRef.current = unsub;
     };
@@ -480,6 +492,7 @@ export function LiveMap({ credentials }: Props) {
       }
       compassStarted = false;
       setGeoStatus(null);
+      setGeoHeading(null);
     };
 
     geo.on("geolocate", onGeolocate);
@@ -795,15 +808,23 @@ export function LiveMap({ credentials }: Props) {
       </div>
 
       {/* geolocate status banner (diagnostic — bottom center, above scale) */}
-      {geoStatus && (
+      {(geoStatus || geoHeading) && (
         <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
           <div className="hud-panel flex items-center gap-2 px-3 py-1.5 text-[11px] text-[color:var(--hud-text)]">
             <span className="hud-corner-tr" aria-hidden />
             <span className="hud-corner-br" aria-hidden />
-            <span className="hud-mono">{geoStatus}</span>
+            {geoStatus && <span className="hud-mono">{geoStatus}</span>}
+            {geoHeading && (
+              <span className="hud-mono text-[color:var(--hud-accent)]">
+                · {geoHeading}
+              </span>
+            )}
             <button
               type="button"
-              onClick={() => setGeoStatus(null)}
+              onClick={() => {
+                setGeoStatus(null);
+                setGeoHeading(null);
+              }}
               aria-label="Dismiss"
               className="text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
             >
