@@ -220,10 +220,14 @@ export function LiveMap({ credentials }: Props) {
     projection,
     weatherOn,
     weatherOpacity,
+    railwayOn,
+    railwayOpacity,
     setBasemapId: setActive,
     setProjection,
     setWeatherOn,
     setWeatherOpacity,
+    setRailwayOn,
+    setRailwayOpacity,
   } = useSettings();
   const [view, setView] = useState<ViewState>({
     center: [6.775, 51.2277],
