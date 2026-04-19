@@ -89,7 +89,7 @@ export function SearchBox({ onSelect }: Props) {
   return (
     <div
       ref={boxRef}
-      className="pointer-events-auto w-64 rounded-xl border border-neutral-700 bg-neutral-900/85 text-xs shadow-xl backdrop-blur"
+      className="pointer-events-auto relative w-full rounded-md border border-neutral-700 bg-neutral-900/85 text-xs shadow-xl backdrop-blur"
     >
       <div className="flex items-center gap-2 px-2.5 py-1.5">
         <svg
@@ -130,7 +130,7 @@ export function SearchBox({ onSelect }: Props) {
       </div>
 
       {showDropdown && (
-        <div className="border-t border-neutral-800">
+        <div className="absolute left-0 right-0 top-full mt-1 rounded-md border border-neutral-700 bg-neutral-900/95 shadow-xl backdrop-blur">
           {state.kind === "loading" && (
             <div className="px-3 py-2 text-neutral-500">Searching…</div>
           )}

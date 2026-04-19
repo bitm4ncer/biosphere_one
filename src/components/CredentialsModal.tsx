@@ -7,9 +7,10 @@ interface Props {
   initial?: Credentials | null;
   onSave: (c: Credentials) => void;
   onClose?: () => void;
+  onClear?: () => void;
 }
 
-export function CredentialsModal({ initial, onSave, onClose }: Props) {
+export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
   const [clientId, setClientId] = useState(initial?.clientId ?? "");
   const [clientSecret, setClientSecret] = useState(initial?.clientSecret ?? "");
   const [showSecret, setShowSecret] = useState(false);
@@ -96,23 +97,36 @@ export function CredentialsModal({ initial, onSave, onClose }: Props) {
             leave this browser except when calling Copernicus directly.
           </p>
 
-          <div className="flex items-center justify-end gap-2 pt-2">
-            {onClose && (
+          <div className="flex items-center justify-between gap-2 pt-2">
+            {onClear ? (
               <button
                 type="button"
-                onClick={onClose}
-                className="rounded-lg px-4 py-2 text-sm text-neutral-400 hover:text-neutral-200"
+                onClick={onClear}
+                className="rounded-lg px-3 py-2 text-sm text-red-400 hover:text-red-300"
               >
-                Cancel
+                Clear credentials
               </button>
+            ) : (
+              <span />
             )}
-            <button
-              type="submit"
-              disabled={!canSubmit}
-              className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-black hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
-            >
-              Save
-            </button>
+            <div className="flex items-center gap-2">
+              {onClose && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-lg px-4 py-2 text-sm text-neutral-400 hover:text-neutral-200"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={!canSubmit}
+                className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-black hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+              >
+                Save
+              </button>
+            </div>
           </div>
         </form>
       </div>

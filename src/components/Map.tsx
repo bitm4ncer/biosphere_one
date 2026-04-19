@@ -9,7 +9,7 @@ import { getAccessToken } from "@/lib/sentinel/auth";
 import { fetchDayOverlay } from "@/lib/sentinel/latest-overlay";
 import { searchCatalog, type Snapshot } from "@/lib/sentinel/catalog";
 import type { Bbox, Credentials } from "@/types/sentinel";
-import { SearchBox } from "./SearchBox";
+import { SettingsGear } from "./SettingsGear";
 import type { GeocodeResult } from "@/lib/geocode";
 import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
@@ -54,6 +54,8 @@ type TimelineState =
 
 interface Props {
   credentials: Credentials | null;
+  flyTarget?: GeocodeResult | null;
+  onOpenSettings?: () => void;
 }
 
 function rasterStyle(basemap: Basemap) {
@@ -359,7 +361,7 @@ function buildLiveLocationEl(): {
   return { root, scaler, cone };
 }
 
-export function LiveMap({ credentials }: Props) {
+export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
@@ -944,11 +946,12 @@ export function LiveMap({ credentials }: Props) {
     setTimelineState({ kind: "idle" });
   }
 
-  function handleGeocodeSelect(result: GeocodeResult) {
+  useEffect(() => {
+    if (!flyTarget) return;
     const map = mapRef.current;
     if (!map) return;
-    if (result.extent) {
-      const [west, north, east, south] = result.extent;
+    if (flyTarget.extent) {
+      const [west, north, east, south] = flyTarget.extent;
       map.fitBounds(
         [
           [west, south],
@@ -957,31 +960,33 @@ export function LiveMap({ credentials }: Props) {
         { padding: 60, duration: 900, maxZoom: 15 },
       );
     } else {
-      const cat = result.category;
+      const cat = flyTarget.category;
       let zoom = 14;
       if (cat === "city" || cat === "town") zoom = 12;
       else if (cat === "village" || cat === "suburb") zoom = 13;
       else if (cat === "country") zoom = 5;
       else if (cat === "state" || cat === "region") zoom = 7;
       else if (cat === "house" || cat === "building") zoom = 17;
-      map.flyTo({ center: result.coordinates, zoom, duration: 900 });
+      map.flyTo({ center: flyTarget.coordinates, zoom, duration: 900 });
     }
-  }
+  }, [flyTarget]);
 
 
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* top-left: search */}
-      <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-2">
-        <SearchBox onSelect={handleGeocodeSelect} />
-      </div>
-
       {/* top-right: hamburger (always rendered) */}
       <div className="pointer-events-none absolute right-3 top-3 z-20">
         <SidebarToggle open={sidebarOpen} onToggle={() => setSidebarOpen((v) => !v)} />
       </div>
+
+      {/* bottom-right: settings gear (opens credentials/api modal) */}
+      {onOpenSettings && (
+        <div className="pointer-events-none absolute bottom-3 right-3 z-20">
+          <SettingsGear onOpen={onOpenSettings} />
+        </div>
+      )}
 
       {/* geolocate status banner (diagnostic — bottom center, above scale) */}
       {(geoStatus || geoHeading) && (
@@ -1010,10 +1015,10 @@ export function LiveMap({ credentials }: Props) {
         </div>
       )}
 
-      {/* mobile backdrop: only on mobile viewports when drawer is open */}
+      {/* mobile tap-to-close layer (fully transparent; no blur/darken) */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-[5] bg-black/40 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-[5] md:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden
         />
