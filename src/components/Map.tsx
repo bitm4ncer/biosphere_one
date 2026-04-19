@@ -14,6 +14,7 @@ import type { GeocodeResult } from "@/lib/geocode";
 import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
+import { ProjectionControl } from "./ProjectionControl";
 
 const CLOUDS_DAYS_BACK = 7;
 const CLOUDS_ANIM_INTERVAL_MS = 900;
@@ -36,8 +37,6 @@ interface ViewState {
   center: [number, number];
   zoom: number;
 }
-
-type Projection = "mercator" | "globe";
 
 type TimelineState =
   | { kind: "idle" }
@@ -248,6 +247,7 @@ export function LiveMap({ credentials }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
+  const projectionControlRef = useRef<ProjectionControl | null>(null);
   const liveMarkerRef = useRef<maplibregl.Marker | null>(null);
   const coneRef = useRef<HTMLDivElement | null>(null);
   const compassUnsubRef = useRef<(() => void) | null>(null);
@@ -296,9 +296,11 @@ export function LiveMap({ credentials }: Props) {
     mapRef.current = map;
     map.once("load", () => map.setProjection({ type: projection }));
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(new ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
-    map.addControl(new maplibregl.FullscreenControl(), "top-right");
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: true, visualizePitch: false }),
+      "bottom-left",
+    );
     const geolocate = new maplibregl.GeolocateControl({
       trackUserLocation: true,
       showUserLocation: true,
@@ -310,8 +312,15 @@ export function LiveMap({ credentials }: Props) {
       },
       fitBoundsOptions: { maxZoom: 15 },
     });
-    map.addControl(geolocate, "top-right");
+    map.addControl(geolocate, "bottom-left");
     geolocateRef.current = geolocate;
+    map.addControl(new maplibregl.FullscreenControl(), "bottom-left");
+    const projectionControl = new ProjectionControl({
+      initial: projection,
+      onChange: setProjection,
+    });
+    projectionControlRef.current = projectionControl;
+    map.addControl(projectionControl, "bottom-left");
 
     map.on("moveend", () => {
       const c = map.getCenter();
@@ -436,6 +445,7 @@ export function LiveMap({ credentials }: Props) {
       } catch {
         // style not yet loaded
       }
+      projectionControlRef.current?.setMode(projection);
     };
     apply();
     map.on("style.load", apply);
@@ -724,11 +734,6 @@ export function LiveMap({ credentials }: Props) {
             {view.center[1].toFixed(4)}°, {view.center[0].toFixed(4)}° · z
             {view.zoom.toFixed(1)}
           </span>
-          <span className="mx-1 h-3 w-px bg-neutral-700" aria-hidden />
-          <ProjectionToggle
-            active={projection}
-            onChange={setProjection}
-          />
         </div>
 
         <TimelinePanel
@@ -948,52 +953,6 @@ function PillToggle({
         }`}
       />
     </button>
-  );
-}
-
-function ProjectionToggle({
-  active,
-  onChange,
-}: {
-  active: Projection;
-  onChange: (p: Projection) => void;
-}) {
-  return (
-    <div className="flex overflow-hidden rounded-md border border-neutral-700">
-      <button
-        type="button"
-        onClick={() => onChange("mercator")}
-        title="Flat (Mercator)"
-        aria-label="Flat projection"
-        className={`flex h-5 w-5 items-center justify-center transition-colors ${
-          active === "mercator"
-            ? "bg-sky-500/25 text-sky-200"
-            : "text-neutral-400 hover:text-neutral-200"
-        }`}
-      >
-        <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <rect x="2" y="3.5" width="12" height="9" rx="1" />
-          <path d="M2 8h12M6 3.5v9M10 3.5v9" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("globe")}
-        title="Globe (sphere)"
-        aria-label="Globe projection"
-        className={`flex h-5 w-5 items-center justify-center transition-colors ${
-          active === "globe"
-            ? "bg-sky-500/25 text-sky-200"
-            : "text-neutral-400 hover:text-neutral-200"
-        }`}
-      >
-        <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.5">
-          <circle cx="8" cy="8" r="5.5" />
-          <ellipse cx="8" cy="8" rx="2.5" ry="5.5" />
-          <path d="M2.5 8h11" />
-        </svg>
-      </button>
-    </div>
   );
 }
 
