@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* MapLibre overrides for dark UI — applied when we mount the map */
+.maplibregl-map {
+  background: #0a0a0a;
+}
