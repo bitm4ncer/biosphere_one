@@ -33,7 +33,7 @@ jobs:
       - name: Build static export
         run: npm run build
         env:
-          NEXT_PUBLIC_BASE_PATH: /biosphere1
+          NEXT_PUBLIC_BASE_PATH: /biosphere_one
 
       - name: Disable Jekyll
         run: touch out/.nojekyll
