@@ -80,3 +80,92 @@ body {
 .maplibregl-user-location-dot::before {
   display: none !important;
 }
+
+/* HUD palette tokens */
+:root {
+  --hud-surface:        rgba(10, 10, 11, 0.85);
+  --hud-surface-opaque: #0a0a0b;
+  --hud-border:         rgba(34, 211, 238, 0.18);
+  --hud-border-strong:  rgba(34, 211, 238, 0.5);
+  --hud-accent:         #22d3ee;
+  --hud-accent-glow:    rgba(34, 211, 238, 0.35);
+  --hud-warn:           #f59e0b;
+  --hud-text:           #e5e7eb;
+  --hud-text-muted:     #6b7280;
+  --hud-text-label:     #9ca3af;
+}
+
+/* HUD panel with corner brackets */
+.hud-panel {
+  position: relative;
+  background: var(--hud-surface);
+  border: 1px solid var(--hud-border);
+  border-radius: 2px;
+  color: var(--hud-text);
+  backdrop-filter: blur(8px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.hud-panel::before,
+.hud-panel::after,
+.hud-panel > .hud-corner-tr,
+.hud-panel > .hud-corner-br {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-color: var(--hud-accent);
+  border-style: solid;
+  border-width: 0;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.hud-panel::before {
+  top: 3px; left: 3px;
+  border-top-width: 1px;
+  border-left-width: 1px;
+}
+
+.hud-panel::after {
+  bottom: 3px; left: 3px;
+  border-bottom-width: 1px;
+  border-left-width: 1px;
+}
+
+.hud-panel > .hud-corner-tr {
+  top: 3px; right: 3px;
+  border-top-width: 1px;
+  border-right-width: 1px;
+}
+
+.hud-panel > .hud-corner-br {
+  bottom: 3px; right: 3px;
+  border-bottom-width: 1px;
+  border-right-width: 1px;
+}
+
+.hud-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--hud-text-label);
+}
+
+.hud-label-bar {
+  border-top: 1px solid var(--hud-border);
+  margin-top: 4px;
+}
+
+.hud-mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* Raise MapLibre control stacks above the mobile drawer backdrop */
+.maplibregl-ctrl-top-left,
+.maplibregl-ctrl-top-right,
+.maplibregl-ctrl-bottom-left,
+.maplibregl-ctrl-bottom-right {
+  z-index: 10;
+}
