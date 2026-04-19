@@ -73,3 +73,10 @@ body {
 .live-location-cone[hidden] {
   display: none;
 }
+
+/* Suppress MapLibre's default user-location dot — we render our own marker. */
+.maplibregl-user-location-dot,
+.maplibregl-user-location-dot::after,
+.maplibregl-user-location-dot::before {
+  display: none !important;
+}

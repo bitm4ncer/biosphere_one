@@ -228,15 +228,16 @@ function buildLiveLocationEl(): { root: HTMLDivElement; cone: HTMLDivElement } {
   const cone = document.createElement("div");
   cone.className = "live-location-cone";
   cone.hidden = true;
+  const gradId = `lc-grad-${Math.random().toString(36).slice(2, 10)}`;
   cone.innerHTML = `
     <svg width="52" height="56" viewBox="0 0 52 56" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="lc-grad" x1="26" y1="0" x2="26" y2="56" gradientUnits="userSpaceOnUse">
+        <linearGradient id="${gradId}" x1="26" y1="0" x2="26" y2="56" gradientUnits="userSpaceOnUse">
           <stop offset="0" stop-color="#22d3ee" stop-opacity="0.8"/>
           <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
         </linearGradient>
       </defs>
-      <path d="M26 0 L52 56 L26 46 L0 56 Z" fill="url(#lc-grad)"/>
+      <path d="M26 0 L52 56 L26 46 L0 56 Z" fill="url(#${gradId})"/>
     </svg>`;
   root.appendChild(cone);
 
@@ -300,7 +301,7 @@ export function LiveMap({ credentials }: Props) {
     map.addControl(new maplibregl.FullscreenControl(), "top-right");
     const geolocate = new maplibregl.GeolocateControl({
       trackUserLocation: true,
-      showUserLocation: false,
+      showUserLocation: true,
       showAccuracyCircle: true,
       positionOptions: {
         enableHighAccuracy: true,
