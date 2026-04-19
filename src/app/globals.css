@@ -269,3 +269,70 @@ input[type="range"].hud-slider::-moz-range-thumb {
   border-radius: 1px;
   box-shadow: 0 0 6px var(--hud-accent-glow);
 }
+
+/* MapLibre control skin to match HUD aesthetic */
+.maplibregl-ctrl-group {
+  background: var(--hud-surface) !important;
+  border: 1px solid var(--hud-border) !important;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(8px);
+}
+
+.maplibregl-ctrl-group:not(:empty) {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.maplibregl-ctrl-group button {
+  background: transparent !important;
+  border-radius: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  color: var(--hud-text) !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: rgba(34, 211, 238, 0.08) !important;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--hud-border) !important;
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(0.9);
+}
+
+.maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon,
+.maplibregl-ctrl-geolocate-background .maplibregl-ctrl-icon {
+  filter: invert(60%) sepia(85%) saturate(1652%) hue-rotate(146deg) brightness(99%) contrast(91%) !important;
+}
+
+.maplibregl-ctrl-projection {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+.maplibregl-ctrl-scale {
+  background: var(--hud-surface) !important;
+  border: 1px solid var(--hud-border) !important;
+  border-top: 1px solid var(--hud-border) !important;
+  color: var(--hud-text-label) !important;
+  font-family: var(--font-geist-mono), ui-monospace, monospace !important;
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+  border-radius: 2px !important;
+  backdrop-filter: blur(8px);
+}
+
+.maplibregl-ctrl-attrib {
+  background: var(--hud-surface) !important;
+  border: 1px solid var(--hud-border) !important;
+  border-radius: 2px !important;
+  backdrop-filter: blur(8px);
+}
+
+.maplibregl-ctrl-attrib a { color: var(--hud-text-label) !important; }
+.maplibregl-ctrl-attrib-inner { color: var(--hud-text-muted) !important; font-size: 10px !important; }
+.maplibregl-ctrl-attrib-button { filter: invert(1) brightness(0.8); }
