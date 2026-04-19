@@ -111,7 +111,7 @@ export async function encodeTimelapse(opts: EncodeOptions): Promise<Blob> {
   await ff.exec(args);
 
   const out = await ff.readFile("out.mp4");
-  const data = out as Uint8Array;
+  const data = new Uint8Array(out as Uint8Array);
 
   await Promise.all(inputNames.map((n) => ff.deleteFile(n).catch(() => undefined)));
   await ff.deleteFile("out.mp4").catch(() => undefined);
