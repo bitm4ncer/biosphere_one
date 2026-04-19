@@ -11,7 +11,7 @@ import { searchCatalog, type Snapshot } from "@/lib/sentinel/catalog";
 import type { Bbox, Credentials } from "@/types/sentinel";
 import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
-import { gibsDateNDaysAgo, gibsTileUrl, gibsYesterday, type GibsLayer } from "@/lib/gibs";
+import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 import { ProjectionControl } from "./ProjectionControl";
@@ -189,10 +189,65 @@ function removeGibsOverlay(map: MLMap, sourceId: string, layerId: string) {
 }
 
 const FIRES_ATTRIBUTION =
-  '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · VIIRS SNPP Thermal Anomalies 375m';
+  '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · GOES-East/West ABI Fire Temperature';
 
 const NDVI_ATTRIBUTION =
   '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · MODIS Terra NDVI 8-day';
+
+// GOES-East + GOES-West ABI FireTemp — raster PNG, EPSG:3857, 10-minute
+// interval, keyless. Together they cover the Americas and the Pacific;
+// Europe / Africa / Asia are outside geostationary fire sensor range
+// (those regions need FIRMS which requires a MAP_KEY — deferred).
+const FIRES_MAX_ZOOM = 7;
+const FIRES_EAST_SOURCE_ID = `${FIRES_SOURCE_ID}-east`;
+const FIRES_WEST_SOURCE_ID = `${FIRES_SOURCE_ID}-west`;
+const FIRES_EAST_LAYER_ID = `${FIRES_LAYER_ID}-east`;
+const FIRES_WEST_LAYER_ID = `${FIRES_LAYER_ID}-west`;
+const FIRES_EAST_URL =
+  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_FireTemp/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png";
+const FIRES_WEST_URL =
+  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-West_ABI_FireTemp/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png";
+
+function ensureFiresLayer(map: MLMap, opacity: number) {
+  if (map.getLayer(FIRES_EAST_LAYER_ID)) return;
+  [
+    [FIRES_EAST_SOURCE_ID, FIRES_EAST_LAYER_ID, FIRES_EAST_URL],
+    [FIRES_WEST_SOURCE_ID, FIRES_WEST_LAYER_ID, FIRES_WEST_URL],
+  ].forEach(([sourceId, layerId, url]) => {
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+    map.addSource(sourceId, {
+      type: "raster",
+      tiles: [url],
+      tileSize: 256,
+      maxzoom: FIRES_MAX_ZOOM,
+      attribution: FIRES_ATTRIBUTION,
+    });
+    map.addLayer({
+      id: layerId,
+      type: "raster",
+      source: sourceId,
+      maxzoom: FIRES_MAX_ZOOM + 1,
+      paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
+    });
+  });
+}
+
+function updateFiresOpacity(map: MLMap, opacity: number) {
+  [FIRES_EAST_LAYER_ID, FIRES_WEST_LAYER_ID].forEach((layerId) => {
+    if (map.getLayer(layerId)) {
+      map.setPaintProperty(layerId, "raster-opacity", opacity);
+    }
+  });
+}
+
+function removeFiresLayer(map: MLMap) {
+  [FIRES_EAST_LAYER_ID, FIRES_WEST_LAYER_ID].forEach((layerId) => {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
+  });
+  [FIRES_EAST_SOURCE_ID, FIRES_WEST_SOURCE_ID].forEach((sourceId) => {
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+  });
+}
 
 function bboxCoordinates(
   bbox: Bbox,
@@ -713,20 +768,14 @@ export function LiveMap({ credentials }: Props) {
   useEffect(() => {
     if (!firesOn) {
       const map = mapRef.current;
-      if (map) removeGibsOverlay(map, FIRES_SOURCE_ID, FIRES_LAYER_ID);
+      if (map) removeFiresLayer(map);
     }
   }, [firesOn]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !firesOn) return;
-    const url = gibsTileUrl({
-      layer: "VIIRS_SNPP_Thermal_Anomalies_375m_All",
-      date: gibsYesterday(),
-      format: "png",
-    });
-    const apply = () =>
-      ensureGibsOverlay(map, FIRES_SOURCE_ID, FIRES_LAYER_ID, url, firesOpacity, FIRES_ATTRIBUTION);
+    const apply = () => ensureFiresLayer(map, firesOpacity);
     if (map.isStyleLoaded()) {
       apply();
     } else {
@@ -742,7 +791,7 @@ export function LiveMap({ credentials }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !firesOn) return;
-    updateGibsOverlayOpacity(map, FIRES_LAYER_ID, firesOpacity);
+    updateFiresOpacity(map, firesOpacity);
   }, [firesOn, firesOpacity]);
 
   useEffect(() => {
@@ -1040,7 +1089,7 @@ export function LiveMap({ credentials }: Props) {
         />
         <GibsOverlayPanel
           label="Fires"
-          caption="VIIRS SNPP · 375m · yesterday"
+          caption="GOES-East/West · 10 min · Americas + Pacific"
           enabled={firesOn}
           onToggle={setFiresOn}
           opacity={firesOpacity}
@@ -1054,6 +1103,7 @@ export function LiveMap({ credentials }: Props) {
           opacity={ndviOpacity}
           onOpacityChange={setNdviOpacity}
         />
+        <div aria-hidden className="h-20 shrink-0" />
       </div>
     </div>
   );
