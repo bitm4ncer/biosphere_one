@@ -972,7 +972,7 @@ export function LiveMap({ credentials }: Props) {
 
       {/* right drawer: settings stack */}
       <div
-        className={`absolute right-3 top-[3.75rem] z-10 flex max-h-[calc(100dvh-4.5rem)] flex-col gap-2 overflow-y-auto overscroll-contain pr-1 transition-transform duration-200 ease-out ${
+        className={`absolute right-3 top-[3.75rem] z-10 flex max-h-[calc(100svh-4.5rem-env(safe-area-inset-bottom,0px))] flex-col gap-2 overflow-y-auto overscroll-contain pr-1 pb-[env(safe-area-inset-bottom,0px)] transition-transform duration-200 ease-out ${
           sidebarOpen
             ? "pointer-events-auto translate-x-0"
             : "pointer-events-none translate-x-[calc(100%+1rem)]"
