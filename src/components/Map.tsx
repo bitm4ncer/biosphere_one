@@ -110,7 +110,9 @@ function removeWeatherLayer(map: MLMap) {
   if (map.getSource(WEATHER_SOURCE_ID)) map.removeSource(WEATHER_SOURCE_ID);
 }
 
-function bboxCoordinates(bbox: Bbox): [number, number][] {
+function bboxCoordinates(
+  bbox: Bbox,
+): [[number, number], [number, number], [number, number], [number, number]] {
   const [west, south, east, north] = bbox;
   return [
     [west, north],
@@ -372,7 +374,9 @@ export function LiveMap({ credentials }: Props) {
       map.once("style.load", apply);
     }
     map.on("style.load", apply);
-    return () => map.off("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weatherOn, active, weatherUrlsKey]);
 
