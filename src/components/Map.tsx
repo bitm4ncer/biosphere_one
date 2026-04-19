@@ -431,9 +431,17 @@ export function LiveMap({ credentials }: Props) {
     };
 
     const onGeoError = (e: { error?: { message?: string; code?: number }; message?: string }) => {
-      const msg = e.error?.message ?? e.message ?? "unknown";
       const code = e.error?.code;
-      setGeoStatus(`Location error${code !== undefined ? ` (${code})` : ""}: ${msg}`);
+      if (code === 1) {
+        setGeoStatus("Location denied. Allow in browser/iOS settings, then reload.");
+      } else if (code === 2) {
+        setGeoStatus("Location unavailable. Check signal or try again.");
+      } else if (code === 3) {
+        setGeoStatus("Location timed out. Tap the button again.");
+      } else {
+        const msg = e.error?.message ?? e.message ?? "unknown";
+        setGeoStatus(`Location error: ${msg}`);
+      }
     };
 
     const onTrackEnd = () => {
