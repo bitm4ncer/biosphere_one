@@ -15,6 +15,8 @@ import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 import { ProjectionControl } from "./ProjectionControl";
+import { LedToggle } from "./hud/LedToggle";
+import { HudPanel } from "./hud/HudPanel";
 
 const CLOUDS_DAYS_BACK = 7;
 const CLOUDS_ANIM_INTERVAL_MS = 900;
@@ -707,19 +709,16 @@ export function LiveMap({ credentials }: Props) {
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-2">
         <SearchBox onSelect={handleGeocodeSelect} />
 
-        <div className="pointer-events-auto rounded-xl border border-neutral-700 bg-neutral-900/85 p-2 text-xs text-neutral-200 shadow-xl backdrop-blur">
-          <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-            Basemap
-          </div>
+        <HudPanel label="Basemap">
           <div className="flex flex-col gap-1">
             {BASEMAPS.map((b) => (
               <button
                 key={b.id}
                 type="button"
                 onClick={() => setActive(b.id)}
-                className={`rounded-lg px-2.5 py-1.5 text-left transition-colors ${
+                className={`rounded-sm px-2.5 py-1.5 text-left transition-colors ${
                   active === b.id
-                    ? "bg-sky-500/20 text-sky-200 ring-1 ring-inset ring-sky-500/50"
+                    ? "bg-[color:var(--hud-accent-glow)] text-[color:var(--hud-accent)] ring-1 ring-inset ring-[color:var(--hud-accent)]"
                     : "text-neutral-300 hover:bg-neutral-800"
                 }`}
               >
@@ -727,14 +726,14 @@ export function LiveMap({ credentials }: Props) {
               </button>
             ))}
           </div>
-        </div>
+        </HudPanel>
 
-        <div className="pointer-events-auto flex items-center gap-1.5 rounded-lg border border-neutral-700 bg-neutral-900/85 px-2 py-1.5 font-mono text-[11px] text-neutral-400 shadow backdrop-blur">
-          <span>
+        <HudPanel className="hud-mono">
+          <span className="text-[11px] text-neutral-400">
             {view.center[1].toFixed(4)}°, {view.center[0].toFixed(4)}° · z
             {view.zoom.toFixed(1)}
           </span>
-        </div>
+        </HudPanel>
 
         <TimelinePanel
           credentials={credentials !== null}
@@ -802,16 +801,16 @@ function WeatherPanel({
   const currentFrame = frames[frameIndex];
 
   return (
-    <div className="pointer-events-auto flex flex-col items-stretch gap-2 rounded-xl border border-neutral-700 bg-neutral-900/85 p-2 text-xs shadow-xl backdrop-blur">
-      <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          Clouds
-          {loading && enabled && (
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-label="Loading tiles" />
-          )}
-        </span>
-        <PillToggle enabled={enabled} onToggle={() => onToggle(!enabled)} />
-      </div>
+    <HudPanel label="Clouds">
+      <div className="flex flex-col items-stretch gap-2">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+            {loading && enabled && (
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-label="Loading tiles" />
+            )}
+          </span>
+          <LedToggle enabled={enabled} onToggle={() => onToggle(!enabled)} label={enabled ? "Turn off" : "Turn on"} />
+        </div>
 
       {enabled && frames.length > 0 && currentFrame && (
         <>
@@ -881,11 +880,13 @@ function WeatherPanel({
           </div>
         </>
       )}
-    </div>
+      </div>
+    </HudPanel>
   );
 }
 
 interface RailwayPanelProps {
+
   enabled: boolean;
   onToggle: (on: boolean) => void;
   opacity: number;
@@ -899,12 +900,11 @@ function RailwayPanel({
   onOpacityChange,
 }: RailwayPanelProps) {
   return (
-    <div className="pointer-events-auto flex flex-col items-stretch gap-2 rounded-xl border border-neutral-700 bg-neutral-900/85 p-2 text-xs shadow-xl backdrop-blur">
+    <HudPanel label="Rail">
+      <div className="flex flex-col items-stretch gap-2">
       <div className="flex items-center justify-between">
-        <span className="px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          Rail
-        </span>
-        <PillToggle enabled={enabled} onToggle={() => onToggle(!enabled)} />
+        <span className="px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500" />
+        <LedToggle enabled={enabled} onToggle={() => onToggle(!enabled)} label={enabled ? "Turn off" : "Turn on"} />
       </div>
 
       {enabled && (
@@ -929,30 +929,8 @@ function RailwayPanel({
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function PillToggle({
-  enabled,
-  onToggle,
-}: {
-  enabled: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={`relative h-5 w-9 rounded-full transition-colors ${enabled ? "bg-sky-500" : "bg-neutral-700"}`}
-      aria-label="Toggle weather"
-    >
-      <span
-        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] ${
-          enabled ? "left-[18px]" : "left-0.5"
-        }`}
-      />
-    </button>
+      </div>
+    </HudPanel>
   );
 }
 
@@ -997,10 +975,10 @@ function TimelinePanel({
   }
 
   return (
-    <div className="pointer-events-auto flex flex-col items-stretch gap-2 rounded-xl border border-neutral-700 bg-neutral-900/85 p-2 text-xs shadow-xl backdrop-blur">
+    <HudPanel label="Timeline">
+      <div className="flex flex-col items-stretch gap-2">
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          Timeline
           {(state.kind === "searching" || state.kind === "loading") && (
             <span
               className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400"
@@ -1108,7 +1086,8 @@ function TimelinePanel({
           </div>
         </>
       )}
-    </div>
+      </div>
+    </HudPanel>
   );
 }
 
