@@ -1,3 +1,4 @@
+// src/lib/settings.ts
 "use client";
 
 import { create } from "zustand";
@@ -11,10 +12,14 @@ export interface Settings {
   projection: Projection;
   weatherOn: boolean;
   weatherOpacity: number;
+  railwayOn: boolean;
+  railwayOpacity: number;
   setBasemapId: (id: string) => void;
   setProjection: (p: Projection) => void;
   setWeatherOn: (on: boolean) => void;
   setWeatherOpacity: (o: number) => void;
+  setRailwayOn: (on: boolean) => void;
+  setRailwayOpacity: (o: number) => void;
 }
 
 export const useSettings = create<Settings>()(
@@ -24,25 +29,33 @@ export const useSettings = create<Settings>()(
       projection: "mercator",
       weatherOn: false,
       weatherOpacity: 0.8,
+      railwayOn: false,
+      railwayOpacity: 0.85,
       setBasemapId: (id) => set({ basemapId: id }),
       setProjection: (p) => set({ projection: p }),
       setWeatherOn: (on) => set({ weatherOn: on }),
       setWeatherOpacity: (o) => set({ weatherOpacity: o }),
+      setRailwayOn: (on) => set({ railwayOn: on }),
+      setRailwayOpacity: (o) => set({ railwayOpacity: o }),
     }),
     {
       name: "biosphere1:settings",
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         basemapId: state.basemapId,
         projection: state.projection,
         weatherOn: state.weatherOn,
         weatherOpacity: state.weatherOpacity,
+        railwayOn: state.railwayOn,
+        railwayOpacity: state.railwayOpacity,
       }),
       migrate: (persisted: unknown, _version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
         delete p.weatherMode;
+        if (typeof p.railwayOn !== "boolean") p.railwayOn = false;
+        if (typeof p.railwayOpacity !== "number") p.railwayOpacity = 0.85;
         return p;
       },
     },
