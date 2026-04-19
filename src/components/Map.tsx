@@ -17,6 +17,7 @@ import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 import { ProjectionControl } from "./ProjectionControl";
 import { LedToggle } from "./hud/LedToggle";
 import { HudPanel } from "./hud/HudPanel";
+import { SidebarToggle } from "./SidebarToggle";
 
 const CLOUDS_DAYS_BACK = 7;
 const CLOUDS_ANIM_INTERVAL_MS = 900;
@@ -280,6 +281,10 @@ export function LiveMap({ credentials }: Props) {
   const [weatherFrameIndex, setWeatherFrameIndex] = useState(CLOUDS_DAYS_BACK - 1);
   const [weatherPlaying, setWeatherPlaying] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.matchMedia("(min-width: 768px)").matches;
+  });
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -573,6 +578,17 @@ export function LiveMap({ credentials }: Props) {
     updateRailwayOpacity(map, railwayOpacity);
   }, [railwayOn, railwayOpacity]);
 
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+    if (!isMobile) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
+
   const loadSnapshot = useCallback(
     async (lockedBbox: Bbox, snapshot: Snapshot) => {
       const map = mapRef.current;
@@ -706,9 +722,32 @@ export function LiveMap({ credentials }: Props) {
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
+      {/* top-left: search */}
       <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-2">
         <SearchBox onSelect={handleGeocodeSelect} />
+      </div>
 
+      {/* top-right: hamburger (always rendered) */}
+      <div className="pointer-events-none absolute right-3 top-3 z-20">
+        <SidebarToggle open={sidebarOpen} onToggle={() => setSidebarOpen((v) => !v)} />
+      </div>
+
+      {/* mobile backdrop: only on mobile viewports when drawer is open */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-[5] bg-black/40 backdrop-blur-sm md:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      {/* right drawer: settings stack */}
+      <div
+        className={`pointer-events-none absolute right-3 top-[3.75rem] z-10 flex flex-col gap-2 transition-transform duration-200 ease-out ${
+          sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
+        }`}
+        aria-hidden={!sidebarOpen}
+      >
         <HudPanel label="Basemap">
           <div className="flex flex-col gap-1">
             {BASEMAPS.map((b) => (
