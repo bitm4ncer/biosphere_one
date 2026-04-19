@@ -169,3 +169,40 @@ body {
 .maplibregl-ctrl-bottom-right {
   z-index: 10;
 }
+
+/* LED-pip toggle */
+.led-toggle {
+  width: 22px;
+  height: 14px;
+  padding: 2px;
+  background: transparent;
+  border: 1px solid var(--hud-border);
+  border-radius: 1px;
+  display: inline-flex;
+  align-items: center;
+  transition: border-color 150ms ease;
+  cursor: pointer;
+}
+
+.led-toggle:hover {
+  border-color: var(--hud-border-strong);
+}
+
+.led-toggle[data-on="true"] {
+  border-color: var(--hud-border-strong);
+}
+
+.led-pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #1f2937;
+  transition: background 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  transform: translateX(0);
+}
+
+.led-toggle[data-on="true"] .led-pip {
+  background: var(--hud-accent);
+  box-shadow: 0 0 6px var(--hud-accent-glow);
+  transform: translateX(8px);
+}
