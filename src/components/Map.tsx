@@ -422,6 +422,35 @@ export function LiveMap({ credentials }: Props) {
     updateWeatherOpacity(map, weatherOpacity);
   }, [weatherOn, weatherOpacity]);
 
+  useEffect(() => {
+    if (!railwayOn) {
+      const map = mapRef.current;
+      if (map) removeRailwayLayer(map);
+    }
+  }, [railwayOn]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !railwayOn) return;
+    const apply = () => ensureRailwayLayer(map, railwayOpacity);
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railwayOn, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !railwayOn) return;
+    updateRailwayOpacity(map, railwayOpacity);
+  }, [railwayOn, railwayOpacity]);
+
   const loadSnapshot = useCallback(
     async (lockedBbox: Bbox, snapshot: Snapshot) => {
       const map = mapRef.current;
