@@ -42,10 +42,7 @@ export default function Home() {
     <div className="fixed inset-0 flex flex-col">
       <header className="flex items-center justify-between border-b border-neutral-800 bg-neutral-950/95 px-4 py-2 backdrop-blur">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-base font-semibold tracking-tight">Biosphere1</h1>
-          <span className="hidden text-xs text-neutral-500 sm:inline">
-            Live Sentinel-2 · client-side
-          </span>
+          <h1 className="text-base font-semibold tracking-tight">biosphere</h1>
         </div>
         <div className="flex items-center gap-2 text-xs">
           {credsLoaded && (
