@@ -13,6 +13,7 @@ import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
 import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
+import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 
 const CLOUDS_DAYS_BACK = 7;
 const CLOUDS_ANIM_INTERVAL_MS = 900;
@@ -212,9 +213,43 @@ function removeSectorOutline(map: MLMap) {
   if (map.getSource(SECTOR_SOURCE_ID)) map.removeSource(SECTOR_SOURCE_ID);
 }
 
+function buildLiveLocationEl(): { root: HTMLDivElement; cone: HTMLDivElement } {
+  const root = document.createElement("div");
+  root.className = "live-location-marker";
+
+  const pulse = document.createElement("div");
+  pulse.className = "live-location-pulse";
+  root.appendChild(pulse);
+
+  const dot = document.createElement("div");
+  dot.className = "live-location-dot";
+  root.appendChild(dot);
+
+  const cone = document.createElement("div");
+  cone.className = "live-location-cone";
+  cone.hidden = true;
+  cone.innerHTML = `
+    <svg width="52" height="56" viewBox="0 0 52 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="lc-grad" x1="26" y1="0" x2="26" y2="56" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#22d3ee" stop-opacity="0.8"/>
+          <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="M26 0 L52 56 L26 46 L0 56 Z" fill="url(#lc-grad)"/>
+    </svg>`;
+  root.appendChild(cone);
+
+  return { root, cone };
+}
+
 export function LiveMap({ credentials }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
+  const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
+  const liveMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const coneRef = useRef<HTMLDivElement | null>(null);
+  const compassUnsubRef = useRef<(() => void) | null>(null);
   const {
     basemapId: active,
     projection,
@@ -263,7 +298,19 @@ export function LiveMap({ credentials }: Props) {
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
     map.addControl(new ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
     map.addControl(new maplibregl.FullscreenControl(), "top-right");
-    map.addControl(new maplibregl.GeolocateControl({ trackUserLocation: false }), "top-right");
+    const geolocate = new maplibregl.GeolocateControl({
+      trackUserLocation: true,
+      showUserLocation: false,
+      showAccuracyCircle: true,
+      positionOptions: {
+        enableHighAccuracy: true,
+        timeout: 20_000,
+        maximumAge: 0,
+      },
+      fitBoundsOptions: { maxZoom: 15 },
+    });
+    map.addControl(geolocate, "top-right");
+    geolocateRef.current = geolocate;
 
     map.on("moveend", () => {
       const c = map.getCenter();
@@ -316,6 +363,68 @@ export function LiveMap({ credentials }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const geo = geolocateRef.current;
+    if (!map || !geo) return;
+
+    const ensureMarker = (lng: number, lat: number) => {
+      if (!liveMarkerRef.current) {
+        const { root, cone } = buildLiveLocationEl();
+        coneRef.current = cone;
+        liveMarkerRef.current = new maplibregl.Marker({
+          element: root,
+          anchor: "center",
+          rotationAlignment: "map",
+        })
+          .setLngLat([lng, lat])
+          .addTo(map);
+      } else {
+        liveMarkerRef.current.setLngLat([lng, lat]);
+      }
+    };
+
+    let compassStarted = false;
+
+    const onGeolocate = async (e: { coords: GeolocationCoordinates }) => {
+      ensureMarker(e.coords.longitude, e.coords.latitude);
+      if (compassStarted) return;
+      compassStarted = true;
+      const granted = await requestCompassPermission();
+      if (!granted) return;
+      const unsub = subscribeCompass((heading) => {
+        const marker = liveMarkerRef.current;
+        const cone = coneRef.current;
+        if (!marker || !cone) return;
+        marker.setRotation(heading);
+        cone.hidden = false;
+      });
+      compassUnsubRef.current = unsub;
+    };
+
+    const onTrackEnd = () => {
+      if (liveMarkerRef.current) {
+        liveMarkerRef.current.remove();
+        liveMarkerRef.current = null;
+        coneRef.current = null;
+      }
+      if (compassUnsubRef.current) {
+        compassUnsubRef.current();
+        compassUnsubRef.current = null;
+      }
+      compassStarted = false;
+    };
+
+    geo.on("geolocate", onGeolocate);
+    geo.on("trackuserlocationend", onTrackEnd);
+
+    return () => {
+      geo.off("geolocate", onGeolocate);
+      geo.off("trackuserlocationend", onTrackEnd);
+      onTrackEnd();
+    };
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
