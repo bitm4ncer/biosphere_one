@@ -648,6 +648,12 @@ export function LiveMap({ credentials }: Props) {
           onOpacityChange={setWeatherOpacity}
           loading={weatherLoading}
         />
+        <RailwayPanel
+          enabled={railwayOn}
+          onToggle={setRailwayOn}
+          opacity={railwayOpacity}
+          onOpacityChange={setRailwayOpacity}
+        />
       </div>
     </div>
   );
@@ -757,6 +763,54 @@ function WeatherPanel({
 
           <div className="text-[10px] text-neutral-500">
             NASA GIBS · VIIRS SNPP true-color · daily
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+interface RailwayPanelProps {
+  enabled: boolean;
+  onToggle: (on: boolean) => void;
+  opacity: number;
+  onOpacityChange: (o: number) => void;
+}
+
+function RailwayPanel({
+  enabled,
+  onToggle,
+  opacity,
+  onOpacityChange,
+}: RailwayPanelProps) {
+  return (
+    <div className="pointer-events-auto flex flex-col items-stretch gap-2 rounded-xl border border-neutral-700 bg-neutral-900/85 p-2 text-xs shadow-xl backdrop-blur">
+      <div className="flex items-center justify-between">
+        <span className="px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
+          Rail
+        </span>
+        <PillToggle enabled={enabled} onToggle={() => onToggle(!enabled)} />
+      </div>
+
+      {enabled && (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase text-neutral-500">Opacity</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={opacity}
+              onChange={(e) => onOpacityChange(Number(e.target.value))}
+              className="w-24 accent-sky-400"
+            />
+            <span className="w-8 text-right text-[10px] text-neutral-400">
+              {Math.round(opacity * 100)}%
+            </span>
+          </div>
+          <div className="text-[10px] text-neutral-500">
+            OpenRailwayMap · OSM
           </div>
         </>
       )}
