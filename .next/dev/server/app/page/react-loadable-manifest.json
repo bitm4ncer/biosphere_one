@@ -1,0 +1,12 @@
+{
+  "[project]/src/components/Map.tsx [app-client] (ecmascript, next/dynamic entry)": {
+    "id": "[project]/src/components/Map.tsx [app-client] (ecmascript, next/dynamic entry)",
+    "files": [
+      "static/chunks/node_modules_maplibre-gl_dist_maplibre-gl_0.x4rah.js",
+      "static/chunks/node_modules_zustand_esm_09r8ra5._.js",
+      "static/chunks/src_0nkrc-4._.js",
+      "static/chunks/node_modules_maplibre-gl_dist_maplibre-gl_0_o_lx4.css",
+      "static/chunks/src_components_Map_tsx_02suhyz._.js"
+    ]
+  }
+}

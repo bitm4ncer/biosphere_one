@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --version)",
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(npx --yes create-next-app@latest . --ts --tailwind --app --src-dir --eslint --no-turbopack --import-alias \"@/*\" --use-npm --yes)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(curl -sS -o /dev/null -w \"HTTP %{http_code} in %{time_total}s\\\\n\" http://localhost:3000/ --max-time 30)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //PID 7780 //F)",
+      "WebFetch(domain:s2maps.eu)",
+      "WebFetch(domain:tiles.maps.eox.at)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Bash(git --version)",
+      "Bash(git -C /c/Users/konta/Desktop/sentipede status)",
+      "Bash(where winget.exe)",
+      "Bash(powershell.exe -Command \"Get-Command git -ErrorAction SilentlyContinue\")",
+      "Bash(winget install *)",
+      "Bash(export PATH=\"/c/Program Files/GitHub CLI:$PATH\")",
+      "Bash(mkdir -p /c/Users/konta/gh-cli)",
+      "Bash(powershell.exe -NoProfile -Command \"Invoke-WebRequest -Uri 'https://github.com/cli/cli/releases/download/v2.90.0/gh_2.90.0_windows_amd64.zip' -OutFile 'C:\\\\Users\\\\konta\\\\gh-cli\\\\gh.zip' ; Expand-Archive -Path 'C:\\\\Users\\\\konta\\\\gh-cli\\\\gh.zip' -DestinationPath 'C:\\\\Users\\\\konta\\\\gh-cli' -Force ; Write-Host 'done'\")",
+      "Bash(export PATH=\"/c/Users/konta/gh-cli/bin:$PATH\")",
+      "Bash(git rm *)",
+      "Bash(git branch *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}
