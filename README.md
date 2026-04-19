@@ -43,3 +43,9 @@ The free tier includes 30 000 Processing Units/month, which covers many Timeline
 Pushing to `main` triggers the workflow in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). The build runs `next build` with `NEXT_PUBLIC_BASE_PATH=/biosphere1`, outputs a static export to `out/`, and deploys to GitHub Pages.
 
 Enable Pages in the repo: **Settings → Pages → Source: GitHub Actions**.
+
+### Live Location
+
+The pulsing-dot live location (geolocate button in the bottom-left map controls) requires a **secure context** — HTTPS or `localhost`. When hit over a plain-HTTP LAN IP (like `192.168.x.x:3000`), browsers disable `navigator.geolocation` and the geolocate button shows a "Location not available" tooltip. This is a browser security policy, not an application bug. Use `npm run dev` on `localhost`, or deploy to HTTPS (GitHub Pages) for device testing.
+
+On iOS, compass heading requires an additional permission prompt triggered by the same user tap that grants location access. If the compass prompt is denied, the pulsing dot still renders without the directional cone.
