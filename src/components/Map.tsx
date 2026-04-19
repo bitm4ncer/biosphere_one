@@ -972,8 +972,10 @@ export function LiveMap({ credentials }: Props) {
 
       {/* right drawer: settings stack */}
       <div
-        className={`pointer-events-none absolute right-3 top-[3.75rem] z-10 flex flex-col gap-2 transition-transform duration-200 ease-out ${
-          sidebarOpen ? "translate-x-0" : "translate-x-[calc(100%+1rem)]"
+        className={`absolute right-3 top-[3.75rem] z-10 flex max-h-[calc(100dvh-4.5rem)] flex-col gap-2 overflow-y-auto overscroll-contain pr-1 transition-transform duration-200 ease-out ${
+          sidebarOpen
+            ? "pointer-events-auto translate-x-0"
+            : "pointer-events-none translate-x-[calc(100%+1rem)]"
         }`}
         aria-hidden={!sidebarOpen}
       >
