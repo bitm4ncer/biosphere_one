@@ -804,11 +804,11 @@ function WeatherPanel({
     <HudPanel label="Clouds">
       <div className="flex flex-col items-stretch gap-2">
         <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-            {loading && enabled && (
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-label="Loading tiles" />
-            )}
-          </span>
+          {loading && enabled ? (
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-label="Loading tiles" />
+          ) : (
+            <span />
+          )}
           <LedToggle enabled={enabled} onToggle={() => onToggle(!enabled)} label={enabled ? "Turn off" : "Turn on"} />
         </div>
 
@@ -886,7 +886,6 @@ function WeatherPanel({
 }
 
 interface RailwayPanelProps {
-
   enabled: boolean;
   onToggle: (on: boolean) => void;
   opacity: number;
@@ -903,7 +902,7 @@ function RailwayPanel({
     <HudPanel label="Rail">
       <div className="flex flex-col items-stretch gap-2">
       <div className="flex items-center justify-between">
-        <span className="px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500" />
+        <span />
         <LedToggle enabled={enabled} onToggle={() => onToggle(!enabled)} label={enabled ? "Turn off" : "Turn on"} />
       </div>
 
@@ -978,14 +977,9 @@ function TimelinePanel({
     <HudPanel label="Timeline">
       <div className="flex flex-col items-stretch gap-2">
       <div className="flex items-center justify-between">
-        <span className="flex items-center gap-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-500">
-          {(state.kind === "searching" || state.kind === "loading") && (
-            <span
-              className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400"
-              aria-label="Loading"
-            />
-          )}
-        </span>
+        {state.kind === "searching" || state.kind === "loading" ? (
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-label="Loading" />
+        ) : null}
         {active && (
           <button
             type="button"
