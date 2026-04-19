@@ -285,6 +285,7 @@ export function LiveMap({ credentials }: Props) {
     if (typeof window === "undefined") return true;
     return window.matchMedia("(min-width: 768px)").matches;
   });
+  const [geoStatus, setGeoStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -421,7 +422,18 @@ export function LiveMap({ credentials }: Props) {
 
     const onGeolocate = (e: { coords: GeolocationCoordinates }) => {
       ensureMarker(e.coords.longitude, e.coords.latitude);
+      setGeoStatus(`Located · ±${Math.round(e.coords.accuracy)}m`);
       if (!compassStarted) void startCompassSubscription();
+    };
+
+    const onTrackStart = () => {
+      setGeoStatus("Requesting location…");
+    };
+
+    const onGeoError = (e: { error?: { message?: string; code?: number }; message?: string }) => {
+      const msg = e.error?.message ?? e.message ?? "unknown";
+      const code = e.error?.code;
+      setGeoStatus(`Location error${code !== undefined ? ` (${code})` : ""}: ${msg}`);
     };
 
     const onTrackEnd = () => {
@@ -435,20 +447,26 @@ export function LiveMap({ credentials }: Props) {
         compassUnsubRef.current = null;
       }
       compassStarted = false;
+      setGeoStatus(null);
     };
 
     geo.on("geolocate", onGeolocate);
+    geo.on("trackuserlocationstart", onTrackStart);
     geo.on("trackuserlocationend", onTrackEnd);
+    geo.on("error", onGeoError);
 
     const btn = document.querySelector<HTMLButtonElement>(".maplibregl-ctrl-geolocate");
     const onBtnClick = () => {
+      setGeoStatus("Requesting location…");
       void startCompassSubscription();
     };
     btn?.addEventListener("click", onBtnClick);
 
     return () => {
       geo.off("geolocate", onGeolocate);
+      geo.off("trackuserlocationstart", onTrackStart);
       geo.off("trackuserlocationend", onTrackEnd);
+      geo.off("error", onGeoError);
       btn?.removeEventListener("click", onBtnClick);
       onTrackEnd();
     };
@@ -742,6 +760,25 @@ export function LiveMap({ credentials }: Props) {
       <div className="pointer-events-none absolute right-3 top-3 z-20">
         <SidebarToggle open={sidebarOpen} onToggle={() => setSidebarOpen((v) => !v)} />
       </div>
+
+      {/* geolocate status banner (diagnostic — bottom center, above scale) */}
+      {geoStatus && (
+        <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+          <div className="hud-panel flex items-center gap-2 px-3 py-1.5 text-[11px] text-[color:var(--hud-text)]">
+            <span className="hud-corner-tr" aria-hidden />
+            <span className="hud-corner-br" aria-hidden />
+            <span className="hud-mono">{geoStatus}</span>
+            <button
+              type="button"
+              onClick={() => setGeoStatus(null)}
+              aria-label="Dismiss"
+              className="text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* mobile backdrop: only on mobile viewports when drawer is open */}
       {sidebarOpen && (
