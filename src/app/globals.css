@@ -23,6 +23,13 @@ body {
   pointer-events: none;
 }
 
+.live-location-scaler {
+  position: absolute;
+  inset: 0;
+  transform-origin: center center;
+  transition: transform 120ms ease-out;
+}
+
 .live-location-dot {
   position: absolute;
   inset: 7px;

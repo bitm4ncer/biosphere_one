@@ -215,17 +215,24 @@ function removeSectorOutline(map: MLMap) {
   if (map.getSource(SECTOR_SOURCE_ID)) map.removeSource(SECTOR_SOURCE_ID);
 }
 
-function buildLiveLocationEl(): { root: HTMLDivElement; cone: HTMLDivElement } {
+function buildLiveLocationEl(): {
+  root: HTMLDivElement;
+  scaler: HTMLDivElement;
+  cone: HTMLDivElement;
+} {
   const root = document.createElement("div");
   root.className = "live-location-marker";
 
+  const scaler = document.createElement("div");
+  scaler.className = "live-location-scaler";
+
   const pulse = document.createElement("div");
   pulse.className = "live-location-pulse";
-  root.appendChild(pulse);
+  scaler.appendChild(pulse);
 
   const dot = document.createElement("div");
   dot.className = "live-location-dot";
-  root.appendChild(dot);
+  scaler.appendChild(dot);
 
   const cone = document.createElement("div");
   cone.className = "live-location-cone";
@@ -241,9 +248,11 @@ function buildLiveLocationEl(): { root: HTMLDivElement; cone: HTMLDivElement } {
       </defs>
       <path d="M26 0 L52 56 L26 46 L0 56 Z" fill="url(#${gradId})"/>
     </svg>`;
-  root.appendChild(cone);
+  scaler.appendChild(cone);
 
-  return { root, cone };
+  root.appendChild(scaler);
+
+  return { root, scaler, cone };
 }
 
 export function LiveMap({ credentials }: Props) {
@@ -252,6 +261,7 @@ export function LiveMap({ credentials }: Props) {
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
   const projectionControlRef = useRef<ProjectionControl | null>(null);
   const liveMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const scalerRef = useRef<HTMLDivElement | null>(null);
   const coneRef = useRef<HTMLDivElement | null>(null);
   const compassUnsubRef = useRef<(() => void) | null>(null);
   const {
@@ -387,10 +397,20 @@ export function LiveMap({ credentials }: Props) {
     const geo = geolocateRef.current;
     if (!map || !geo) return;
 
+    const applyScale = () => {
+      const scaler = scalerRef.current;
+      if (!scaler) return;
+      const z = map.getZoom();
+      // Linear: 0.4x at z6 → 1.0x at z18 (clamped).
+      const scale = Math.max(0.4, Math.min(1, 0.4 + (z - 6) * 0.05));
+      scaler.style.transform = `scale(${scale})`;
+    };
+
     const ensureMarker = (lng: number, lat: number) => {
       if (!liveMarkerRef.current) {
-        const { root, cone } = buildLiveLocationEl();
+        const { root, scaler, cone } = buildLiveLocationEl();
         coneRef.current = cone;
+        scalerRef.current = scaler;
         liveMarkerRef.current = new maplibregl.Marker({
           element: root,
           anchor: "center",
@@ -398,10 +418,13 @@ export function LiveMap({ credentials }: Props) {
         })
           .setLngLat([lng, lat])
           .addTo(map);
+        applyScale();
       } else {
         liveMarkerRef.current.setLngLat([lng, lat]);
       }
     };
+
+    map.on("zoom", applyScale);
 
     let compassStarted = false;
 
@@ -449,6 +472,7 @@ export function LiveMap({ credentials }: Props) {
         liveMarkerRef.current.remove();
         liveMarkerRef.current = null;
         coneRef.current = null;
+        scalerRef.current = null;
       }
       if (compassUnsubRef.current) {
         compassUnsubRef.current();
@@ -475,6 +499,7 @@ export function LiveMap({ credentials }: Props) {
       geo.off("trackuserlocationstart", onTrackStart);
       geo.off("trackuserlocationend", onTrackEnd);
       geo.off("error", onGeoError);
+      map.off("zoom", applyScale);
       btn?.removeEventListener("click", onBtnClick);
       onTrackEnd();
     };
