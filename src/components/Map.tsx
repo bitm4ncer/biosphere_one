@@ -404,8 +404,7 @@ export function LiveMap({ credentials }: Props) {
 
     let compassStarted = false;
 
-    const onGeolocate = async (e: { coords: GeolocationCoordinates }) => {
-      ensureMarker(e.coords.longitude, e.coords.latitude);
+    const startCompassSubscription = async () => {
       if (compassStarted) return;
       compassStarted = true;
       const granted = await requestCompassPermission();
@@ -418,6 +417,11 @@ export function LiveMap({ credentials }: Props) {
         cone.hidden = false;
       });
       compassUnsubRef.current = unsub;
+    };
+
+    const onGeolocate = (e: { coords: GeolocationCoordinates }) => {
+      ensureMarker(e.coords.longitude, e.coords.latitude);
+      if (!compassStarted) void startCompassSubscription();
     };
 
     const onTrackEnd = () => {
@@ -436,9 +440,16 @@ export function LiveMap({ credentials }: Props) {
     geo.on("geolocate", onGeolocate);
     geo.on("trackuserlocationend", onTrackEnd);
 
+    const btn = document.querySelector<HTMLButtonElement>(".maplibregl-ctrl-geolocate");
+    const onBtnClick = () => {
+      void startCompassSubscription();
+    };
+    btn?.addEventListener("click", onBtnClick);
+
     return () => {
       geo.off("geolocate", onGeolocate);
       geo.off("trackuserlocationend", onTrackEnd);
+      btn?.removeEventListener("click", onBtnClick);
       onTrackEnd();
     };
   }, []);
