@@ -15,9 +15,11 @@ import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 import { ProjectionControl } from "./ProjectionControl";
-import { LedToggle } from "./hud/LedToggle";
 import { HudPanel } from "./hud/HudPanel";
 import { SidebarToggle } from "./SidebarToggle";
+import { HikingToggle } from "./HikingToggle";
+import { HikingPanel } from "./hud/HikingPanel";
+import { useHikingLayers } from "./hiking/useHikingLayers";
 
 const CLOUDS_DAYS_BACK = 7;
 const CLOUDS_ANIM_INTERVAL_MS = 900;
@@ -403,12 +405,21 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const [weatherFrameIndex, setWeatherFrameIndex] = useState(CLOUDS_DAYS_BACK - 1);
   const [weatherPlaying, setWeatherPlaying] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return window.matchMedia("(min-width: 768px)").matches;
+  type SidebarPane = "control" | "hiking";
+  const [activeSidebar, setActiveSidebar] = useState<SidebarPane | null>(() => {
+    if (typeof window === "undefined") return "control";
+    return window.matchMedia("(min-width: 768px)").matches ? "control" : null;
   });
+  const sidebarOpen = activeSidebar !== null;
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
   const [geoHeading, setGeoHeading] = useState<string | null>(null);
+  const [mapInstance, setMapInstance] = useState<MLMap | null>(null);
+
+  useHikingLayers(mapInstance);
+
+  const toggleSidebar = (pane: SidebarPane) => {
+    setActiveSidebar((current) => (current === pane ? null : pane));
+  };
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -425,6 +436,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       hash: true,
     });
     mapRef.current = map;
+    setMapInstance(map);
     map.once("load", () => map.setProjection({ type: projection }));
 
     map.addControl(new ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
@@ -482,6 +494,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
+      setMapInstance(null);
     };
   }, []);
 
@@ -834,7 +847,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
     if (!isMobile) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSidebarOpen(false);
+      if (e.key === "Escape") setActiveSidebar(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1023,12 +1036,12 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-[5] md:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={() => setActiveSidebar(null)}
           aria-hidden
         />
       )}
 
-      {/* Full-height sidebar with attached handle */}
+      {/* Full-height sidebar with attached handles */}
       <aside
         className={`absolute right-0 top-0 bottom-0 z-10 flex w-full max-w-[340px] transition-transform duration-200 ease-out ${
           sidebarOpen
@@ -1036,11 +1049,15 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
             : "translate-x-[calc(100%-34px)]"
         }`}
       >
-        {/* handle tab (hangs on the sidebar's left edge) */}
-        <div className="flex shrink-0 items-start pt-4">
+        {/* stacked handle column (hangs on the sidebar's left edge) */}
+        <div className="flex shrink-0 flex-col items-start gap-2 pt-4">
           <SidebarToggle
-            open={sidebarOpen}
-            onToggle={() => setSidebarOpen((v) => !v)}
+            open={activeSidebar === "control"}
+            onToggle={() => toggleSidebar("control")}
+          />
+          <HikingToggle
+            open={activeSidebar === "hiking"}
+            onToggle={() => toggleSidebar("hiking")}
           />
         </div>
 
@@ -1052,7 +1069,9 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
           <div className="flex items-center justify-between border-b border-[color:var(--hud-border)] px-3 py-2">
             <div className="flex items-center gap-2">
               <span className="inline-block h-2 w-2 rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]" />
-              <span className="hud-label">Control Deck</span>
+              <span className="hud-label">
+                {activeSidebar === "hiking" ? "Hiking" : "Control Deck"}
+              </span>
             </div>
             <span className="hud-mono text-[10px] text-[color:var(--hud-text-muted)]">
               BIOSPHERE · v1
@@ -1060,44 +1079,50 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
           </div>
 
           <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 pb-[max(env(safe-area-inset-bottom,0px),12px)] flex flex-col gap-3">
-            <HudPanel className="hud-mono">
-              <span className="text-[11px] text-[color:var(--hud-text)]">
-                {view.center[1].toFixed(4)}°, {view.center[0].toFixed(4)}° · z
-                {view.zoom.toFixed(1)}
-              </span>
-            </HudPanel>
+            {activeSidebar === "hiking" ? (
+              <HikingPanel mapRef={mapRef} />
+            ) : (
+              <>
+                <HudPanel className="hud-mono">
+                  <span className="text-[11px] text-[color:var(--hud-text)]">
+                    {view.center[1].toFixed(4)}°, {view.center[0].toFixed(4)}° · z
+                    {view.zoom.toFixed(1)}
+                  </span>
+                </HudPanel>
 
-            <BasemapPanel activeId={active} onSelect={setActive} />
+                <BasemapPanel activeId={active} onSelect={setActive} />
 
-            <OverlayPanel
-              active={activeOverlay}
-              onChange={setActiveOverlay}
-              opacity={overlayOpacityForActive}
-              onOpacityChange={setOverlayOpacityForActive}
-              weatherProps={{
-                frames: weatherFrames,
-                frameIndex: weatherFrameIndex,
-                onFrameIndex: setWeatherFrameIndex,
-                isPlaying: weatherPlaying,
-                onPlayingChange: setWeatherPlaying,
-                loading: weatherLoading,
-              }}
-            />
+                <OverlayPanel
+                  active={activeOverlay}
+                  onChange={setActiveOverlay}
+                  opacity={overlayOpacityForActive}
+                  onOpacityChange={setOverlayOpacityForActive}
+                  weatherProps={{
+                    frames: weatherFrames,
+                    frameIndex: weatherFrameIndex,
+                    onFrameIndex: setWeatherFrameIndex,
+                    isPlaying: weatherPlaying,
+                    onPlayingChange: setWeatherPlaying,
+                    loading: weatherLoading,
+                  }}
+                />
 
-            <TimelinePanel
-              credentials={credentials !== null}
-              zoomOk={view.zoom >= MIN_FETCH_ZOOM}
-              minZoom={MIN_FETCH_ZOOM}
-              state={timelineState}
-              sector={sector}
-              snapshots={snapshots}
-              snapshotIndex={snapshotIndex}
-              onStart={handleStartTimeline}
-              onSelect={handleSelectSnapshot}
-              onClear={handleClearTimeline}
-              opacity={overlayOpacity}
-              onOpacityChange={setOverlayOpacity}
-            />
+                <TimelinePanel
+                  credentials={credentials !== null}
+                  zoomOk={view.zoom >= MIN_FETCH_ZOOM}
+                  minZoom={MIN_FETCH_ZOOM}
+                  state={timelineState}
+                  sector={sector}
+                  snapshots={snapshots}
+                  snapshotIndex={snapshotIndex}
+                  onStart={handleStartTimeline}
+                  onSelect={handleSelectSnapshot}
+                  onClear={handleClearTimeline}
+                  opacity={overlayOpacity}
+                  onOpacityChange={setOverlayOpacity}
+                />
+              </>
+            )}
           </div>
 
           {onOpenSettings && (
