@@ -74,6 +74,40 @@ function removeSourceIfExists(map: MLMap, id: string) {
   if (map.getSource(id)) map.removeSource(id);
 }
 
+/**
+ * Order (bottom-to-top) in which hiking layers must sit above every other
+ * overlay. The last ID ends up on top after the `moveLayer` sweep.
+ */
+const HIKING_Z_ORDER: string[] = [
+  RADIUS_FILL,
+  RADIUS_LINE,
+  ROUTE_LAYER_ALT_CASING,
+  ROUTE_LAYER_ALT,
+  ROUTE_LAYER_CASING,
+  ROUTE_LAYER_PRIMARY,
+  STATION_ENDPOINT_LAYER,
+  STATION_LAYER,
+  STATION_LABEL,
+];
+
+/**
+ * Re-assert hiking layer stacking: move every existing hiking layer to the
+ * top of the stack in priority order. Called after we add our own layers
+ * and whenever another layer elsewhere in the app (e.g. the Rail raster
+ * overlay) is added or the basemap is swapped.
+ */
+function raiseHikingLayers(map: MLMap) {
+  for (const id of HIKING_Z_ORDER) {
+    if (map.getLayer(id)) {
+      try {
+        map.moveLayer(id);
+      } catch {
+        // layer may be in a transient state during style swap — ignore
+      }
+    }
+  }
+}
+
 function routesFeatureCollection(
   candidates: RouteCandidate[],
   selectedId: string | null,
@@ -113,6 +147,23 @@ export function useHikingLayers(map: MLMap | null) {
   const candidates = useHiking((s) => s.candidates);
   const selectedCandidateId = useHiking((s) => s.selectedCandidateId);
   const pickStation = useHiking((s) => s.pickStation);
+
+  // Keep hiking layers above any other overlay that gets toggled on or any
+  // basemap style swap. MapLibre fires `styledata` for both — we debounce
+  // with rAF so the move happens after the new layers settle.
+  useEffect(() => {
+    if (!map) return;
+    let frame = 0;
+    const bump = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => raiseHikingLayers(map));
+    };
+    map.on("styledata", bump);
+    return () => {
+      cancelAnimationFrame(frame);
+      map.off("styledata", bump);
+    };
+  }, [map]);
 
   // Radius circle around center
   useEffect(() => {

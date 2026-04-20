@@ -7,6 +7,7 @@ import { DEFAULT_BASEMAP_ID } from "./basemaps";
 
 export type Projection = "mercator" | "globe";
 export type OverlayKind = "clouds" | "rail" | "fires" | "ndvi";
+export type RailStyle = "tiles" | "lines";
 
 export interface Settings {
   basemapId: string;
@@ -14,6 +15,7 @@ export interface Settings {
   activeOverlay: OverlayKind | null;
   weatherOpacity: number;
   railwayOpacity: number;
+  railStyle: RailStyle;
   firesOpacity: number;
   ndviOpacity: number;
   setBasemapId: (id: string) => void;
@@ -21,6 +23,7 @@ export interface Settings {
   setActiveOverlay: (kind: OverlayKind | null) => void;
   setWeatherOpacity: (o: number) => void;
   setRailwayOpacity: (o: number) => void;
+  setRailStyle: (style: RailStyle) => void;
   setFiresOpacity: (o: number) => void;
   setNdviOpacity: (o: number) => void;
 }
@@ -33,6 +36,7 @@ export const useSettings = create<Settings>()(
       activeOverlay: null,
       weatherOpacity: 0.8,
       railwayOpacity: 0.85,
+      railStyle: "lines",
       firesOpacity: 0.9,
       ndviOpacity: 0.7,
       setBasemapId: (id) => set({ basemapId: id }),
@@ -40,12 +44,13 @@ export const useSettings = create<Settings>()(
       setActiveOverlay: (kind) => set({ activeOverlay: kind }),
       setWeatherOpacity: (o) => set({ weatherOpacity: o }),
       setRailwayOpacity: (o) => set({ railwayOpacity: o }),
+      setRailStyle: (style) => set({ railStyle: style }),
       setFiresOpacity: (o) => set({ firesOpacity: o }),
       setNdviOpacity: (o) => set({ ndviOpacity: o }),
     }),
     {
       name: "biosphere1:settings",
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         basemapId: state.basemapId,
@@ -53,6 +58,7 @@ export const useSettings = create<Settings>()(
         activeOverlay: state.activeOverlay,
         weatherOpacity: state.weatherOpacity,
         railwayOpacity: state.railwayOpacity,
+        railStyle: state.railStyle,
         firesOpacity: state.firesOpacity,
         ndviOpacity: state.ndviOpacity,
       }),
@@ -77,6 +83,7 @@ export const useSettings = create<Settings>()(
         if (typeof p.railwayOpacity !== "number") p.railwayOpacity = 0.85;
         if (typeof p.firesOpacity !== "number") p.firesOpacity = 0.9;
         if (typeof p.ndviOpacity !== "number") p.ndviOpacity = 0.7;
+        if (p.railStyle !== "tiles" && p.railStyle !== "lines") p.railStyle = "lines";
         return p;
       },
     },

@@ -13,6 +13,7 @@ import { SettingsGear } from "./SettingsGear";
 import type { GeocodeResult } from "@/lib/geocode";
 import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
+import { fetchRailLines } from "@/lib/hiking/overpass";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 import { ProjectionControl } from "./ProjectionControl";
 import { HudPanel } from "./hud/HudPanel";
@@ -151,6 +152,101 @@ function updateRailwayOpacity(map: MLMap, opacity: number) {
 function removeRailwayLayer(map: MLMap) {
   if (map.getLayer(RAILWAY_LAYER_ID)) map.removeLayer(RAILWAY_LAYER_ID);
   if (map.getSource(RAILWAY_SOURCE_ID)) map.removeSource(RAILWAY_SOURCE_ID);
+}
+
+// Clean rail view — custom OSM lines fetched from Overpass, no text labels.
+const RAIL_LINES_SOURCE_ID = "rail-lines-src";
+const RAIL_LINES_CASING_LAYER_ID = "rail-lines-casing";
+const RAIL_LINES_MAIN_LAYER_ID = "rail-lines-main";
+const RAIL_LINES_MIN_ZOOM = 8;
+
+function ensureRailLinesLayer(map: MLMap, opacity: number) {
+  if (!map.getSource(RAIL_LINES_SOURCE_ID)) {
+    map.addSource(RAIL_LINES_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+      attribution: RAILWAY_ATTRIBUTION,
+    });
+  }
+  if (!map.getLayer(RAIL_LINES_CASING_LAYER_ID)) {
+    map.addLayer({
+      id: RAIL_LINES_CASING_LAYER_ID,
+      type: "line",
+      source: RAIL_LINES_SOURCE_ID,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#080a06",
+        "line-width": [
+          "interpolate", ["linear"], ["zoom"],
+          9, 1.8,
+          12, 2.8,
+          16, 4,
+        ],
+        "line-opacity": opacity,
+      },
+    });
+  }
+  if (!map.getLayer(RAIL_LINES_MAIN_LAYER_ID)) {
+    map.addLayer({
+      id: RAIL_LINES_MAIN_LAYER_ID,
+      type: "line",
+      source: RAIL_LINES_SOURCE_ID,
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": [
+          "match",
+          ["get", "kind"],
+          "rail", "#d4ff38",
+          "light_rail", "#b8e6ff",
+          "subway", "#b8e6ff",
+          "tram", "#9dd4ff",
+          "narrow_gauge", "#e2b8ff",
+          "#d4ff38",
+        ],
+        "line-width": [
+          "interpolate", ["linear"], ["zoom"],
+          9, 0.6,
+          12, 1.2,
+          16, 2,
+        ],
+        "line-opacity": opacity,
+        "line-dasharray": [
+          "case",
+          ["==", ["get", "tunnel"], true], ["literal", [2, 2]],
+          ["literal", [1, 0]],
+        ],
+      },
+    });
+  }
+}
+
+function updateRailLinesOpacity(map: MLMap, opacity: number) {
+  if (map.getLayer(RAIL_LINES_MAIN_LAYER_ID)) {
+    map.setPaintProperty(RAIL_LINES_MAIN_LAYER_ID, "line-opacity", opacity);
+  }
+  if (map.getLayer(RAIL_LINES_CASING_LAYER_ID)) {
+    map.setPaintProperty(
+      RAIL_LINES_CASING_LAYER_ID,
+      "line-opacity",
+      opacity,
+    );
+  }
+}
+
+function setRailLinesData(map: MLMap, data: GeoJSON.FeatureCollection) {
+  const src = map.getSource(RAIL_LINES_SOURCE_ID) as unknown as
+    | { setData?: (d: GeoJSON.FeatureCollection) => void }
+    | undefined;
+  if (src?.setData) src.setData(data);
+}
+
+function removeRailLinesLayer(map: MLMap) {
+  if (map.getLayer(RAIL_LINES_MAIN_LAYER_ID))
+    map.removeLayer(RAIL_LINES_MAIN_LAYER_ID);
+  if (map.getLayer(RAIL_LINES_CASING_LAYER_ID))
+    map.removeLayer(RAIL_LINES_CASING_LAYER_ID);
+  if (map.getSource(RAIL_LINES_SOURCE_ID))
+    map.removeSource(RAIL_LINES_SOURCE_ID);
 }
 
 const GIBS_MAX_ZOOM = 9;
@@ -378,6 +474,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     activeOverlay,
     weatherOpacity,
     railwayOpacity,
+    railStyle,
     firesOpacity,
     ndviOpacity,
     setBasemapId: setActive,
@@ -385,6 +482,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     setActiveOverlay,
     setWeatherOpacity,
     setRailwayOpacity,
+    setRailStyle,
     setFiresOpacity,
     setNdviOpacity,
   } = useSettings();
@@ -749,34 +847,99 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     updateWeatherOpacity(map, weatherOpacity);
   }, [weatherOn, weatherOpacity]);
 
-  useEffect(() => {
-    if (!railwayOn) {
-      const map = mapRef.current;
-      if (map) removeRailwayLayer(map);
-    }
-  }, [railwayOn]);
-
+  // Raster OpenRailwayMap overlay (rail + railStyle === "tiles")
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !railwayOn) return;
-    const apply = () => ensureRailwayLayer(map, railwayOpacity);
-    if (map.isStyleLoaded()) {
-      apply();
-    } else {
-      map.once("style.load", apply);
+    if (!map) return;
+    const tilesActive = railwayOn && railStyle === "tiles";
+    if (!tilesActive) {
+      removeRailwayLayer(map);
+      return;
     }
+    const apply = () => ensureRailwayLayer(map, railwayOpacity);
+    if (map.isStyleLoaded()) apply();
+    else map.once("style.load", apply);
     map.on("style.load", apply);
     return () => {
       map.off("style.load", apply);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railwayOn, active]);
+  }, [railwayOn, railStyle, active]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !railwayOn) return;
+    if (!map || !railwayOn || railStyle !== "tiles") return;
     updateRailwayOpacity(map, railwayOpacity);
-  }, [railwayOn, railwayOpacity]);
+  }, [railwayOn, railStyle, railwayOpacity]);
+
+  // Clean rail lines from Overpass (rail + railStyle === "lines")
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const linesActive = railwayOn && railStyle === "lines";
+    if (!linesActive) {
+      removeRailLinesLayer(map);
+      return;
+    }
+
+    let ctrl: AbortController | null = null;
+    let timer: number | null = null;
+    let cancelled = false;
+
+    const fetchAndSet = async () => {
+      if (cancelled) return;
+      if (map.getZoom() < RAIL_LINES_MIN_ZOOM) {
+        setRailLinesData(map, { type: "FeatureCollection", features: [] });
+        return;
+      }
+      ctrl?.abort();
+      ctrl = new AbortController();
+      try {
+        const b = map.getBounds();
+        const bbox: [number, number, number, number] = [
+          b.getSouth(),
+          b.getWest(),
+          b.getNorth(),
+          b.getEast(),
+        ];
+        const fc = await fetchRailLines(bbox, ctrl.signal);
+        if (!cancelled && !ctrl.signal.aborted) setRailLinesData(map, fc);
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          console.warn("[rail-lines]", err);
+        }
+      }
+    };
+
+    const debouncedFetch = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(fetchAndSet, 400);
+    };
+
+    const apply = () => {
+      ensureRailLinesLayer(map, railwayOpacity);
+      fetchAndSet();
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("style.load", apply);
+    map.on("style.load", apply);
+    map.on("moveend", debouncedFetch);
+
+    return () => {
+      cancelled = true;
+      ctrl?.abort();
+      if (timer != null) window.clearTimeout(timer);
+      map.off("style.load", apply);
+      map.off("moveend", debouncedFetch);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railwayOn, railStyle, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !railwayOn || railStyle !== "lines") return;
+    updateRailLinesOpacity(map, railwayOpacity);
+  }, [railwayOn, railStyle, railwayOpacity]);
 
   useEffect(() => {
     if (!firesOn) {
@@ -1097,6 +1260,8 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                   onChange={setActiveOverlay}
                   opacity={overlayOpacityForActive}
                   onOpacityChange={setOverlayOpacityForActive}
+                  railStyle={railStyle}
+                  onRailStyleChange={setRailStyle}
                   weatherProps={{
                     frames: weatherFrames,
                     frameIndex: weatherFrameIndex,
@@ -1181,6 +1346,8 @@ interface OverlayPanelProps {
   onChange: (k: OverlayKind | null) => void;
   opacity: number;
   onOpacityChange: (o: number) => void;
+  railStyle: "tiles" | "lines";
+  onRailStyleChange: (s: "tiles" | "lines") => void;
   weatherProps: {
     frames: { time: number; date: string; urls: string[] }[];
     frameIndex: number;
@@ -1196,6 +1363,8 @@ function OverlayPanel({
   onChange,
   opacity,
   onOpacityChange,
+  railStyle,
+  onRailStyleChange,
   weatherProps,
 }: OverlayPanelProps) {
   const tabs: { key: OverlayKind | null; label: string }[] = [
@@ -1210,7 +1379,9 @@ function OverlayPanel({
     active === "clouds"
       ? "NASA GIBS · VIIRS SNPP true-color · daily"
       : active === "rail"
-        ? "OpenRailwayMap · OSM"
+        ? railStyle === "lines"
+          ? "OSM rail lines · Overpass · no labels"
+          : "OpenRailwayMap raster · OSM"
         : active === "fires"
           ? "GOES-East/West · 10 min · Americas + Pacific"
           : active === "ndvi"
@@ -1236,6 +1407,33 @@ function OverlayPanel({
             </button>
           ))}
         </div>
+
+        {active === "rail" && (
+          <div className="flex items-center gap-2">
+            <span className="hud-label text-[9px]">Style</span>
+            <div
+              className="hud-tab-row flex-1"
+              style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
+            >
+              <button
+                type="button"
+                className="hud-tab"
+                data-active={railStyle === "lines"}
+                onClick={() => onRailStyleChange("lines")}
+              >
+                Lines
+              </button>
+              <button
+                type="button"
+                className="hud-tab"
+                data-active={railStyle === "tiles"}
+                onClick={() => onRailStyleChange("tiles")}
+              >
+                ORM · tiles
+              </button>
+            </div>
+          </div>
+        )}
 
         {active === "clouds" && f.frames.length > 0 && currentFrame && (
           <div className="flex flex-col gap-2">
