@@ -30,7 +30,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
                 href="https://dataspace.copernicus.eu/"
                 target="_blank"
                 rel="noreferrer"
-                className="text-sky-400 underline underline-offset-2 hover:text-sky-300"
+                className="text-[color:var(--hud-accent)] underline underline-offset-2 hover:opacity-80"
               >
                 Copernicus Data Space
               </a>{" "}
@@ -64,7 +64,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
               type="text"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm focus:border-sky-500 focus:outline-none"
+              className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm focus:border-[color:var(--hud-accent)] focus:outline-none"
               placeholder="sh-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               autoComplete="off"
               spellCheck={false}
@@ -78,7 +78,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
                 type={showSecret ? "text" : "password"}
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 pr-16 font-mono text-sm focus:border-sky-500 focus:outline-none"
+                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 pr-16 font-mono text-sm focus:border-[color:var(--hud-accent)] focus:outline-none"
                 autoComplete="off"
                 spellCheck={false}
               />
@@ -122,7 +122,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-black hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+                className="hud-btn-primary"
               >
                 Save
               </button>

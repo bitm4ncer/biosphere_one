@@ -1,7 +1,10 @@
+export type BasemapCategory = "photo" | "vector";
+
 export interface Basemap {
   id: string;
   label: string;
   kind: "raster" | "style";
+  category: BasemapCategory;
   url: string;
   maxzoom?: number;
   attribution: string;
@@ -30,6 +33,7 @@ export const BASEMAPS: Basemap[] = [
     id: "s2cloudless-2024",
     label: "Sentinel-2 · 2024",
     kind: "raster",
+    category: "photo",
     url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg",
     maxzoom: 15,
     attribution: `${EOX_ATTRIB} 2024`,
@@ -38,6 +42,7 @@ export const BASEMAPS: Basemap[] = [
     id: "s2cloudless-2023",
     label: "Sentinel-2 · 2023",
     kind: "raster",
+    category: "photo",
     url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2023_3857/default/g/{z}/{y}/{x}.jpg",
     maxzoom: 15,
     attribution: `${EOX_ATTRIB} 2023`,
@@ -46,6 +51,7 @@ export const BASEMAPS: Basemap[] = [
     id: "esri-imagery",
     label: "Satellite · HD",
     kind: "raster",
+    category: "photo",
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     maxzoom: 19,
     attribution: ESRI_ATTRIB,
@@ -54,6 +60,7 @@ export const BASEMAPS: Basemap[] = [
     id: "night",
     label: "Night · Black Marble",
     kind: "raster",
+    category: "photo",
     url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png",
     maxzoom: 8,
     attribution: `${GIBS_ATTRIB} · VIIRS Black Marble (2016)`,
@@ -62,6 +69,7 @@ export const BASEMAPS: Basemap[] = [
     id: "terrain",
     label: "Terrain",
     kind: "raster",
+    category: "vector",
     url: "https://tiles.maps.eox.at/wmts/1.0.0/terrain-light_3857/default/g/{z}/{y}/{x}.jpg",
     maxzoom: 11,
     attribution: EOX_ATTRIB,
@@ -70,6 +78,7 @@ export const BASEMAPS: Basemap[] = [
     id: "opentopo",
     label: "Topographic",
     kind: "raster",
+    category: "vector",
     url: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
     maxzoom: 17,
     attribution: OPENTOPO_ATTRIB,
@@ -78,6 +87,7 @@ export const BASEMAPS: Basemap[] = [
     id: "voyager",
     label: "Voyager",
     kind: "style",
+    category: "vector",
     url: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
     maxzoom: 19,
     attribution: CARTO_ATTRIB,
@@ -86,6 +96,7 @@ export const BASEMAPS: Basemap[] = [
     id: "streets-dark",
     label: "Streets · dark",
     kind: "style",
+    category: "vector",
     url: "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
     maxzoom: 19,
     attribution: CARTO_ATTRIB,
@@ -94,6 +105,7 @@ export const BASEMAPS: Basemap[] = [
     id: "streets-light",
     label: "Streets · light",
     kind: "style",
+    category: "vector",
     url: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
     maxzoom: 19,
     attribution: CARTO_ATTRIB,

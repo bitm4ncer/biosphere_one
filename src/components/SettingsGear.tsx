@@ -3,8 +3,8 @@ interface SettingsGearProps {
 }
 
 /**
- * Bottom-right gear button that opens the settings/credentials popup.
- * Shares the same HUD chrome as other floating controls.
+ * Compact gear button that opens the credentials/API settings modal.
+ * Visually a small terminal-style diamond with the accent glow.
  */
 export function SettingsGear({ onOpen }: SettingsGearProps) {
   return (
@@ -12,21 +12,19 @@ export function SettingsGear({ onOpen }: SettingsGearProps) {
       type="button"
       onClick={onOpen}
       aria-label="Open settings"
-      className="hud-panel pointer-events-auto flex h-10 w-10 items-center justify-center text-[color:var(--hud-accent)] transition-colors hover:border-[color:var(--hud-border-strong)]"
+      className="hud-btn-ghost pointer-events-auto"
     >
-      <span className="hud-corner-tr" aria-hidden />
-      <span className="hud-corner-br" aria-hidden />
       <svg
-        width="18"
-        height="18"
-        viewBox="0 0 18 18"
+        width="14"
+        height="14"
+        viewBox="0 0 16 16"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         aria-hidden
       >
-        <circle cx="9" cy="9" r="2.2" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.4" />
         <path
-          d="M9 1.5 V3.5 M9 14.5 V16.5 M1.5 9 H3.5 M14.5 9 H16.5 M3.7 3.7 L5.2 5.2 M12.8 12.8 L14.3 14.3 M14.3 3.7 L12.8 5.2 M5.2 12.8 L3.7 14.3"
+          d="M8 1.2 V3 M8 13 V14.8 M1.2 8 H3 M13 8 H14.8 M3.2 3.2 L4.5 4.5 M11.5 11.5 L12.8 12.8 M12.8 3.2 L11.5 4.5 M4.5 11.5 L3.2 12.8"
           stroke="currentColor"
           strokeWidth="1.3"
           strokeLinecap="round"

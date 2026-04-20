@@ -35,10 +35,12 @@ body {
   inset: 7px;
   width: 14px;
   height: 14px;
-  background: #22d3ee;
-  border: 2px solid white;
+  background: var(--hud-accent);
+  border: 2px solid #0a0a0b;
   border-radius: 50%;
-  box-shadow: 0 0 12px rgba(34, 211, 238, 0.6);
+  box-shadow:
+    0 0 0 1px var(--hud-accent),
+    0 0 14px var(--hud-accent-glow);
   z-index: 2;
 }
 
@@ -47,15 +49,15 @@ body {
   inset: 0;
   width: 28px;
   height: 28px;
-  background: #22d3ee;
+  background: var(--hud-accent);
   border-radius: 50%;
-  opacity: 0.6;
+  opacity: 0.55;
   animation: live-location-pulse 2s ease-out infinite;
   z-index: 1;
 }
 
 @keyframes live-location-pulse {
-  0% { transform: scale(0.4); opacity: 0.6; }
+  0% { transform: scale(0.4); opacity: 0.55; }
   100% { transform: scale(2.6); opacity: 0; }
 }
 
@@ -88,21 +90,35 @@ body {
   display: none !important;
 }
 
-/* HUD palette tokens */
+/* ── HUD palette ─────────────────────────────────────────────────────── */
 :root {
-  --hud-surface:        rgba(10, 10, 11, 0.85);
-  --hud-surface-opaque: #0a0a0b;
-  --hud-border:         rgba(34, 211, 238, 0.18);
-  --hud-border-strong:  rgba(34, 211, 238, 0.5);
-  --hud-accent:         #22d3ee;
-  --hud-accent-glow:    rgba(34, 211, 238, 0.35);
+  --hud-surface:        rgba(8, 10, 6, 0.88);
+  --hud-surface-solid:  rgba(8, 10, 6, 0.96);
+  --hud-surface-opaque: #080a06;
+  --hud-border:         rgba(212, 255, 56, 0.22);
+  --hud-border-strong:  rgba(212, 255, 56, 0.6);
+  --hud-accent:         #d4ff38;
+  --hud-accent-soft:    rgba(212, 255, 56, 0.14);
+  --hud-accent-glow:    rgba(212, 255, 56, 0.4);
   --hud-warn:           #f59e0b;
-  --hud-text:           #e5e7eb;
+  --hud-text:           #e8f0d9;
   --hud-text-muted:     #6b7280;
   --hud-text-label:     #9ca3af;
+  --hud-danger:         #f97066;
 }
 
-/* HUD panel with corner brackets */
+/* Retro scanline texture — applied to sidebar panel backgrounds */
+.hud-scanlines {
+  background-image:
+    linear-gradient(180deg, rgba(212, 255, 56, 0.02) 0%, rgba(0, 0, 0, 0) 100%),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.018) 0 1px,
+      transparent 1px 3px
+    );
+}
+
+/* ── HUD panel with corner brackets ──────────────────────────────────── */
 .hud-panel {
   position: relative;
   background: var(--hud-surface);
@@ -124,7 +140,7 @@ body {
   border-color: var(--hud-accent);
   border-style: solid;
   border-width: 0;
-  opacity: 0.55;
+  opacity: 0.6;
   pointer-events: none;
 }
 
@@ -155,7 +171,7 @@ body {
 .hud-label {
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--hud-text-label);
 }
@@ -177,9 +193,9 @@ body {
   z-index: 10;
 }
 
-/* LED-pip toggle */
+/* ── LED-pip toggle ──────────────────────────────────────────────────── */
 .led-toggle {
-  width: 22px;
+  width: 26px;
   height: 14px;
   padding: 2px;
   background: transparent;
@@ -187,7 +203,7 @@ body {
   border-radius: 1px;
   display: inline-flex;
   align-items: center;
-  transition: border-color 150ms ease;
+  transition: border-color 150ms ease, background 150ms ease;
   cursor: pointer;
 }
 
@@ -197,6 +213,7 @@ body {
 
 .led-toggle[data-on="true"] {
   border-color: var(--hud-border-strong);
+  background: var(--hud-accent-soft);
 }
 
 .led-pip {
@@ -211,10 +228,10 @@ body {
 .led-toggle[data-on="true"] .led-pip {
   background: var(--hud-accent);
   box-shadow: 0 0 6px var(--hud-accent-glow);
-  transform: translateX(8px);
+  transform: translateX(12px);
 }
 
-/* HUD sliders — square thumb, thin track, tick marks */
+/* ── HUD sliders ─────────────────────────────────────────────────────── */
 input[type="range"].hud-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -229,27 +246,27 @@ input[type="range"].hud-slider::-webkit-slider-runnable-track {
   background: linear-gradient(to right,
     var(--hud-accent) 0%,
     var(--hud-accent) var(--hud-fill, 50%),
-    #374151 var(--hud-fill, 50%),
-    #374151 100%);
+    #2c3340 var(--hud-fill, 50%),
+    #2c3340 100%);
   background-size: 100% 2px, 8px 10px;
   background-image:
     linear-gradient(to right,
       var(--hud-accent) 0%,
       var(--hud-accent) var(--hud-fill, 50%),
-      #374151 var(--hud-fill, 50%),
-      #374151 100%),
+      #2c3340 var(--hud-fill, 50%),
+      #2c3340 100%),
     repeating-linear-gradient(to right,
       transparent 0,
       transparent 9px,
-      rgba(156, 163, 175, 0.35) 9px,
-      rgba(156, 163, 175, 0.35) 10px);
+      rgba(156, 163, 175, 0.3) 9px,
+      rgba(156, 163, 175, 0.3) 10px);
   background-repeat: no-repeat;
   background-position: 0 center, 0 center;
 }
 
 input[type="range"].hud-slider::-moz-range-track {
   height: 2px;
-  background: #374151;
+  background: #2c3340;
 }
 
 input[type="range"].hud-slider::-moz-range-progress {
@@ -260,24 +277,24 @@ input[type="range"].hud-slider::-moz-range-progress {
 input[type="range"].hud-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 10px;
-  height: 12px;
+  height: 14px;
   background: var(--hud-accent);
-  border: 1px solid #0a0a0b;
+  border: 1px solid #080a06;
   border-radius: 1px;
-  margin-top: -5px;
+  margin-top: -6px;
   box-shadow: 0 0 6px var(--hud-accent-glow);
 }
 
 input[type="range"].hud-slider::-moz-range-thumb {
   width: 10px;
-  height: 12px;
+  height: 14px;
   background: var(--hud-accent);
-  border: 1px solid #0a0a0b;
+  border: 1px solid #080a06;
   border-radius: 1px;
   box-shadow: 0 0 6px var(--hud-accent-glow);
 }
 
-/* MapLibre control skin to match HUD aesthetic */
+/* ── MapLibre control skin ───────────────────────────────────────────── */
 .maplibregl-ctrl-group {
   background: var(--hud-surface) !important;
   border: 1px solid var(--hud-border) !important;
@@ -299,7 +316,7 @@ input[type="range"].hud-slider::-moz-range-thumb {
 }
 
 .maplibregl-ctrl-group button:hover {
-  background: rgba(34, 211, 238, 0.08) !important;
+  background: var(--hud-accent-soft) !important;
 }
 
 .maplibregl-ctrl-group button + button {
@@ -310,9 +327,11 @@ input[type="range"].hud-slider::-moz-range-thumb {
   filter: invert(1) brightness(0.9);
 }
 
+/* Geolocate active/background states use the accent color */
 .maplibregl-ctrl-geolocate-active .maplibregl-ctrl-icon,
 .maplibregl-ctrl-geolocate-background .maplibregl-ctrl-icon {
-  filter: invert(60%) sepia(85%) saturate(1652%) hue-rotate(146deg) brightness(99%) contrast(91%) !important;
+  filter: brightness(0) saturate(100%) invert(90%) sepia(38%) saturate(1664%)
+    hue-rotate(20deg) brightness(103%) contrast(104%) !important;
 }
 
 .maplibregl-ctrl-projection {
@@ -343,3 +362,213 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .maplibregl-ctrl-attrib a { color: var(--hud-text-label) !important; }
 .maplibregl-ctrl-attrib-inner { color: var(--hud-text-muted) !important; font-size: 10px !important; }
 .maplibregl-ctrl-attrib-button { filter: invert(1) brightness(0.8); }
+
+/* ── Sidebar drawer ──────────────────────────────────────────────────── */
+.hud-sidebar {
+  background: var(--hud-surface-solid);
+  border-left: 1px solid var(--hud-border);
+  box-shadow: -20px 0 40px -10px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+}
+
+/* Handle/tab that hangs on the sidebar's left edge */
+.hud-handle {
+  position: relative;
+  width: 34px;
+  height: 64px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hud-surface-solid);
+  border: 1px solid var(--hud-border);
+  border-right: 0;
+  color: var(--hud-accent);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+  clip-path: polygon(0 8px, 100% 0, 100% 100%, 0 calc(100% - 8px));
+  backdrop-filter: blur(8px);
+}
+
+.hud-handle:hover {
+  border-color: var(--hud-border-strong);
+  background: var(--hud-accent-soft);
+}
+
+.hud-handle::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 4px;
+  width: 2px;
+  background: var(--hud-accent);
+  opacity: 0.5;
+  box-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+/* ── Overlay tab switcher ────────────────────────────────────────────── */
+.hud-tab-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--hud-border);
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.hud-tab {
+  padding: 5px 2px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hud-text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 1px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.hud-tab:hover {
+  color: var(--hud-text);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hud-tab[data-active="true"] {
+  color: var(--hud-accent);
+  background: var(--hud-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--hud-border-strong);
+  text-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+/* ── Basemap card ───────────────────────────────────────────────────── */
+.hud-basemap-btn {
+  position: relative;
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 11px;
+  background: transparent;
+  color: var(--hud-text);
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.hud-basemap-btn:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--hud-border);
+}
+
+.hud-basemap-btn[data-active="true"] {
+  color: var(--hud-accent);
+  background: var(--hud-accent-soft);
+  border-color: var(--hud-border-strong);
+  text-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+.hud-basemap-btn[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  background: var(--hud-accent);
+  box-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+/* ── Section heading inside sidebar ─────────────────────────────────── */
+.hud-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.hud-section-heading > .line {
+  flex: 1;
+  height: 1px;
+  background: var(--hud-border);
+}
+
+/* ── Primary action button (e.g. "Start for this view") ─────────────── */
+.hud-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #080a06;
+  background: var(--hud-accent);
+  border: 1px solid var(--hud-accent);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+  box-shadow: 0 0 12px var(--hud-accent-glow);
+}
+
+.hud-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 0 18px var(--hud-accent-glow);
+}
+
+.hud-btn-primary:disabled {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--hud-border);
+  color: var(--hud-text-muted);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* Ghost / icon-sized button used for play/prev/next */
+.hud-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--hud-border);
+  background: transparent;
+  color: var(--hud-text);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.hud-btn-ghost:hover:not(:disabled) {
+  background: var(--hud-accent-soft);
+  border-color: var(--hud-border-strong);
+  color: var(--hud-accent);
+}
+
+.hud-btn-ghost:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ── Search input (used in header) ──────────────────────────────────── */
+.hud-search {
+  border: 1px solid var(--hud-border);
+  background: var(--hud-surface);
+  border-radius: 2px;
+  transition: border-color 150ms ease;
+}
+
+.hud-search:focus-within {
+  border-color: var(--hud-border-strong);
+  box-shadow: 0 0 0 1px var(--hud-border-strong);
+}
+
+.hud-search-dropdown {
+  border: 1px solid var(--hud-border-strong);
+  background: var(--hud-surface-solid);
+  border-radius: 2px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.7);
+}

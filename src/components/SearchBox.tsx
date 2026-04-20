@@ -87,14 +87,11 @@ export function SearchBox({ onSelect }: Props) {
     (state.kind === "loading" || state.kind === "ok" || state.kind === "error");
 
   return (
-    <div
-      ref={boxRef}
-      className="pointer-events-auto relative w-full rounded-md border border-neutral-700 bg-neutral-900/85 text-xs shadow-xl backdrop-blur"
-    >
-      <div className="flex items-center gap-2 px-2.5 py-1.5">
+    <div ref={boxRef} className="pointer-events-auto relative w-full text-xs">
+      <div className="hud-search flex items-center gap-2 px-2.5 py-1.5">
         <svg
           viewBox="0 0 16 16"
-          className="h-3.5 w-3.5 shrink-0 text-neutral-500"
+          className="h-3.5 w-3.5 shrink-0 text-[color:var(--hud-text-muted)]"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.5"
@@ -110,7 +107,7 @@ export function SearchBox({ onSelect }: Props) {
           onFocus={() => setFocused(true)}
           onKeyDown={handleKey}
           placeholder="Search places, streets, POIs"
-          className="w-full bg-transparent text-neutral-100 placeholder:text-neutral-500 focus:outline-none"
+          className="w-full bg-transparent text-[color:var(--hud-text)] placeholder:text-[color:var(--hud-text-muted)] focus:outline-none"
           spellCheck={false}
           autoComplete="off"
         />
@@ -121,7 +118,7 @@ export function SearchBox({ onSelect }: Props) {
               setQuery("");
               setState({ kind: "idle" });
             }}
-            className="text-neutral-500 hover:text-neutral-200"
+            className="text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
             aria-label="Clear"
           >
             ✕
@@ -130,15 +127,15 @@ export function SearchBox({ onSelect }: Props) {
       </div>
 
       {showDropdown && (
-        <div className="absolute left-0 right-0 top-full mt-1 rounded-md border border-neutral-700 bg-neutral-900/95 shadow-xl backdrop-blur">
+        <div className="hud-search-dropdown absolute left-0 right-0 top-full z-50 mt-1">
           {state.kind === "loading" && (
-            <div className="px-3 py-2 text-neutral-500">Searching…</div>
+            <div className="px-3 py-2 text-[color:var(--hud-text-muted)]">Searching…</div>
           )}
           {state.kind === "error" && (
-            <div className="px-3 py-2 text-red-400">{state.message}</div>
+            <div className="px-3 py-2 text-[color:var(--hud-danger)]">{state.message}</div>
           )}
           {state.kind === "ok" && state.results.length === 0 && (
-            <div className="px-3 py-2 text-neutral-500">No matches</div>
+            <div className="px-3 py-2 text-[color:var(--hud-text-muted)]">No matches</div>
           )}
           {state.kind === "ok" && state.results.length > 0 && (
             <ul className="max-h-72 overflow-y-auto">
@@ -150,15 +147,15 @@ export function SearchBox({ onSelect }: Props) {
                     onMouseEnter={() => setHighlight(i)}
                     className={`block w-full px-3 py-1.5 text-left transition-colors ${
                       highlight === i
-                        ? "bg-sky-500/20 text-sky-100"
-                        : "text-neutral-200 hover:bg-neutral-800"
+                        ? "bg-[color:var(--hud-accent-soft)] text-[color:var(--hud-accent)]"
+                        : "text-[color:var(--hud-text)] hover:bg-white/5"
                     }`}
                   >
                     <div className="truncate font-medium">{r.name || r.label}</div>
-                    <div className="truncate text-[10px] text-neutral-500">
+                    <div className="truncate text-[10px] text-[color:var(--hud-text-muted)]">
                       {r.label.replace(r.name ? `${r.name}, ` : "", "") || "—"}
                       {r.category && (
-                        <span className="ml-1.5 rounded bg-neutral-800 px-1 py-0.5 text-neutral-400">
+                        <span className="ml-1.5 rounded border border-[color:var(--hud-border)] px-1 py-0.5 text-[color:var(--hud-text-muted)]">
                           {r.category}
                         </span>
                       )}

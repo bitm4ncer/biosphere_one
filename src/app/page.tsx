@@ -43,14 +43,16 @@ export default function Home() {
 
   return (
     <div className="fixed inset-0 flex flex-col">
-      <header className="flex items-center gap-3 border-b border-neutral-800 bg-neutral-950/95 px-4 py-2 backdrop-blur">
-        <h1 className="shrink-0 text-base font-semibold tracking-tight">biosphere</h1>
+      <header className="relative z-50 flex items-center gap-3 border-b border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] px-4 py-2 backdrop-blur">
+        <h1 className="shrink-0 font-mono text-sm font-semibold uppercase tracking-[0.2em] text-[color:var(--hud-accent)]">
+          biosphere<span className="text-[color:var(--hud-text-muted)]">_01</span>
+        </h1>
         <div className="min-w-0 max-w-xl flex-1">
           <SearchBox onSelect={setFlyTarget} />
         </div>
       </header>
 
-      <main className="relative flex-1">
+      <main className="relative flex-1 overflow-hidden">
         <LiveMap
           credentials={creds}
           flyTarget={flyTarget}

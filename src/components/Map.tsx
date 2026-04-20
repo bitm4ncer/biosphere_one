@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl, { Map as MLMap, ScaleControl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { BASEMAPS, type Basemap } from "@/lib/basemaps";
-import { useSettings } from "@/lib/settings";
+import { BASEMAPS, type Basemap, type BasemapCategory } from "@/lib/basemaps";
+import { useSettings, type OverlayKind } from "@/lib/settings";
 import { getAccessToken } from "@/lib/sentinel/auth";
 import { fetchDayOverlay } from "@/lib/sentinel/latest-overlay";
 import { searchCatalog, type Snapshot } from "@/lib/sentinel/catalog";
@@ -348,8 +348,8 @@ function buildLiveLocationEl(): {
     <svg width="52" height="56" viewBox="0 0 52 56" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="${gradId}" x1="26" y1="0" x2="26" y2="56" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#22d3ee" stop-opacity="0.8"/>
-          <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+          <stop offset="0" stop-color="#d4ff38" stop-opacity="0.85"/>
+          <stop offset="1" stop-color="#d4ff38" stop-opacity="0"/>
         </linearGradient>
       </defs>
       <path d="M26 0 L52 56 L26 46 L0 56 Z" fill="url(#${gradId})"/>
@@ -373,25 +373,23 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const {
     basemapId: active,
     projection,
-    weatherOn,
+    activeOverlay,
     weatherOpacity,
-    railwayOn,
     railwayOpacity,
-    firesOn,
     firesOpacity,
-    ndviOn,
     ndviOpacity,
     setBasemapId: setActive,
     setProjection,
-    setWeatherOn,
+    setActiveOverlay,
     setWeatherOpacity,
-    setRailwayOn,
     setRailwayOpacity,
-    setFiresOn,
     setFiresOpacity,
-    setNdviOn,
     setNdviOpacity,
   } = useSettings();
+  const weatherOn = activeOverlay === "clouds";
+  const railwayOn = activeOverlay === "rail";
+  const firesOn = activeOverlay === "fires";
+  const ndviOn = activeOverlay === "ndvi";
   const [view, setView] = useState<ViewState>({
     center: [6.775, 51.2277],
     zoom: 12,
@@ -972,21 +970,27 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   }, [flyTarget]);
 
 
+  const overlayOpacityForActive =
+    activeOverlay === "clouds"
+      ? weatherOpacity
+      : activeOverlay === "rail"
+        ? railwayOpacity
+        : activeOverlay === "fires"
+          ? firesOpacity
+          : activeOverlay === "ndvi"
+            ? ndviOpacity
+            : 1;
+
+  const setOverlayOpacityForActive = (o: number) => {
+    if (activeOverlay === "clouds") setWeatherOpacity(o);
+    else if (activeOverlay === "rail") setRailwayOpacity(o);
+    else if (activeOverlay === "fires") setFiresOpacity(o);
+    else if (activeOverlay === "ndvi") setNdviOpacity(o);
+  };
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
-
-      {/* top-right: hamburger (always rendered) */}
-      <div className="pointer-events-none absolute right-3 top-3 z-20">
-        <SidebarToggle open={sidebarOpen} onToggle={() => setSidebarOpen((v) => !v)} />
-      </div>
-
-      {/* bottom-right: settings gear (opens credentials/api modal) */}
-      {onOpenSettings && (
-        <div className="pointer-events-none absolute bottom-3 right-3 z-20">
-          <SettingsGear onOpen={onOpenSettings} />
-        </div>
-      )}
 
       {/* geolocate status banner (diagnostic — bottom center, above scale) */}
       {(geoStatus || geoHeading) && (
@@ -1024,243 +1028,246 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
         />
       )}
 
-      {/* right drawer: settings stack */}
-      <div
-        className={`absolute right-3 top-[3.75rem] z-10 flex max-h-[calc(100svh-4.5rem-env(safe-area-inset-bottom,0px))] flex-col gap-2 overflow-y-auto overscroll-contain pr-1 pb-[env(safe-area-inset-bottom,0px)] transition-transform duration-200 ease-out ${
+      {/* Full-height sidebar with attached handle */}
+      <aside
+        className={`absolute right-0 top-0 bottom-0 z-10 flex w-full max-w-[340px] transition-transform duration-200 ease-out ${
           sidebarOpen
-            ? "pointer-events-auto translate-x-0"
-            : "pointer-events-none translate-x-[calc(100%+1rem)]"
+            ? "translate-x-0"
+            : "translate-x-[calc(100%-34px)]"
         }`}
-        aria-hidden={!sidebarOpen}
       >
-        <HudPanel label="Basemap">
-          <div className="flex flex-col gap-1">
-            {BASEMAPS.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => setActive(b.id)}
-                className={`rounded-sm px-2.5 py-1.5 text-left transition-colors ${
-                  active === b.id
-                    ? "bg-[color:var(--hud-accent-glow)] text-[color:var(--hud-accent)] ring-1 ring-inset ring-[color:var(--hud-accent)]"
-                    : "text-neutral-300 hover:bg-neutral-800"
-                }`}
-              >
-                {b.label}
-              </button>
-            ))}
+        {/* handle tab (hangs on the sidebar's left edge) */}
+        <div className="flex shrink-0 items-start pt-4">
+          <SidebarToggle
+            open={sidebarOpen}
+            onToggle={() => setSidebarOpen((v) => !v)}
+          />
+        </div>
+
+        {/* panel body */}
+        <div
+          className="hud-sidebar hud-scanlines flex min-w-0 flex-1 flex-col"
+          aria-hidden={!sidebarOpen}
+        >
+          <div className="flex items-center justify-between border-b border-[color:var(--hud-border)] px-3 py-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]" />
+              <span className="hud-label">Control Deck</span>
+            </div>
+            <span className="hud-mono text-[10px] text-[color:var(--hud-text-muted)]">
+              BIOSPHERE · v1
+            </span>
           </div>
-        </HudPanel>
 
-        <HudPanel className="hud-mono">
-          <span className="text-[11px] text-neutral-400">
-            {view.center[1].toFixed(4)}°, {view.center[0].toFixed(4)}° · z
-            {view.zoom.toFixed(1)}
-          </span>
-        </HudPanel>
+          <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 pb-[max(env(safe-area-inset-bottom,0px),12px)] flex flex-col gap-3">
+            <HudPanel className="hud-mono">
+              <span className="text-[11px] text-[color:var(--hud-text)]">
+                {view.center[1].toFixed(4)}°, {view.center[0].toFixed(4)}° · z
+                {view.zoom.toFixed(1)}
+              </span>
+            </HudPanel>
 
-        <TimelinePanel
-          credentials={credentials !== null}
-          zoomOk={view.zoom >= MIN_FETCH_ZOOM}
-          minZoom={MIN_FETCH_ZOOM}
-          state={timelineState}
-          sector={sector}
-          snapshots={snapshots}
-          snapshotIndex={snapshotIndex}
-          onStart={handleStartTimeline}
-          onSelect={handleSelectSnapshot}
-          onClear={handleClearTimeline}
-          opacity={overlayOpacity}
-          onOpacityChange={setOverlayOpacity}
-        />
+            <BasemapPanel activeId={active} onSelect={setActive} />
 
-        <WeatherPanel
-          enabled={weatherOn}
-          onToggle={setWeatherOn}
-          frames={weatherFrames}
-          frameIndex={weatherFrameIndex}
-          onFrameIndex={setWeatherFrameIndex}
-          isPlaying={weatherPlaying}
-          onPlayingChange={setWeatherPlaying}
-          opacity={weatherOpacity}
-          onOpacityChange={setWeatherOpacity}
-          loading={weatherLoading}
-        />
-        <RailwayPanel
-          enabled={railwayOn}
-          onToggle={setRailwayOn}
-          opacity={railwayOpacity}
-          onOpacityChange={setRailwayOpacity}
-        />
-        <GibsOverlayPanel
-          label="Fires"
-          caption="GOES-East/West · 10 min · Americas + Pacific"
-          enabled={firesOn}
-          onToggle={setFiresOn}
-          opacity={firesOpacity}
-          onOpacityChange={setFiresOpacity}
-        />
-        <GibsOverlayPanel
-          label="NDVI"
-          caption="MODIS Terra · 8-day · 1km"
-          enabled={ndviOn}
-          onToggle={setNdviOn}
-          opacity={ndviOpacity}
-          onOpacityChange={setNdviOpacity}
-        />
-        <div aria-hidden className="h-20 shrink-0" />
-      </div>
+            <OverlayPanel
+              active={activeOverlay}
+              onChange={setActiveOverlay}
+              opacity={overlayOpacityForActive}
+              onOpacityChange={setOverlayOpacityForActive}
+              weatherProps={{
+                frames: weatherFrames,
+                frameIndex: weatherFrameIndex,
+                onFrameIndex: setWeatherFrameIndex,
+                isPlaying: weatherPlaying,
+                onPlayingChange: setWeatherPlaying,
+                loading: weatherLoading,
+              }}
+            />
+
+            <TimelinePanel
+              credentials={credentials !== null}
+              zoomOk={view.zoom >= MIN_FETCH_ZOOM}
+              minZoom={MIN_FETCH_ZOOM}
+              state={timelineState}
+              sector={sector}
+              snapshots={snapshots}
+              snapshotIndex={snapshotIndex}
+              onStart={handleStartTimeline}
+              onSelect={handleSelectSnapshot}
+              onClear={handleClearTimeline}
+              opacity={overlayOpacity}
+              onOpacityChange={setOverlayOpacity}
+            />
+          </div>
+
+          {onOpenSettings && (
+            <div className="flex items-center justify-between border-t border-[color:var(--hud-border)] px-3 py-2">
+              <span className="hud-label">Credentials</span>
+              <SettingsGear onOpen={onOpenSettings} />
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
 
-interface WeatherPanelProps {
-  enabled: boolean;
-  onToggle: (on: boolean) => void;
-  frames: { time: number; date: string; urls: string[] }[];
-  frameIndex: number;
-  onFrameIndex: (i: number) => void;
-  isPlaying: boolean;
-  onPlayingChange: (p: boolean) => void;
-  opacity: number;
-  onOpacityChange: (o: number) => void;
-  loading: boolean;
+interface BasemapPanelProps {
+  activeId: string;
+  onSelect: (id: string) => void;
 }
 
-function WeatherPanel({
-  enabled,
-  onToggle,
-  frames,
-  frameIndex,
-  onFrameIndex,
-  isPlaying,
-  onPlayingChange,
-  opacity,
-  onOpacityChange,
-  loading,
-}: WeatherPanelProps) {
-  const currentFrame = frames[frameIndex];
-
+function BasemapPanel({ activeId, onSelect }: BasemapPanelProps) {
+  const groups: { key: BasemapCategory; label: string; items: Basemap[] }[] = [
+    { key: "photo", label: "Photo Maps", items: BASEMAPS.filter((b) => b.category === "photo") },
+    { key: "vector", label: "Vector Maps", items: BASEMAPS.filter((b) => b.category === "vector") },
+  ];
   return (
-    <HudPanel label="Clouds">
-      <div className="flex flex-col items-stretch gap-2">
-        <div className="flex items-center justify-between">
-          {loading && enabled ? (
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-label="Loading tiles" />
-          ) : (
-            <span />
-          )}
-          <LedToggle enabled={enabled} onToggle={() => onToggle(!enabled)} label={enabled ? "Turn off" : "Turn on"} />
-        </div>
-
-      {enabled && frames.length > 0 && currentFrame && (
-        <>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onPlayingChange(!isPlaying)}
-              className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:bg-neutral-800"
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? (
-                <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor">
-                  <rect x="1.5" y="1" width="2" height="8" />
-                  <rect x="6.5" y="1" width="2" height="8" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor">
-                  <path d="M2 1 L9 5 L2 9 Z" />
-                </svg>
-              )}
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={frames.length - 1}
-              step={1}
-              value={frameIndex}
-              onChange={(e) => {
-                onPlayingChange(false);
-                onFrameIndex(Number(e.target.value));
-              }}
-              className="flex-1 hud-slider"
-              style={{ ["--hud-fill" as string]: `${Math.round((frameIndex / Math.max(1, frames.length - 1)) * 100)}%` }}
-            />
+    <HudPanel label="Basemap">
+      <div className="flex flex-col gap-2.5">
+        {groups.map((g) => (
+          <div key={g.key} className="flex flex-col gap-1">
+            <div className="hud-section-heading">
+              <span className="hud-label text-[9px]">{g.label}</span>
+              <span className="line" aria-hidden />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              {g.items.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => onSelect(b.id)}
+                  data-active={activeId === b.id}
+                  className="hud-basemap-btn"
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
           </div>
-
-          <div className="flex items-center justify-between text-[10px]">
-            <span className="text-neutral-400">
-              {new Date(currentFrame.time * 1000).toLocaleDateString([], {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              })}
-            </span>
-            <span className="text-neutral-500">
-              {frameIndex + 1}/{frames.length}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase text-neutral-500">Opacity</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={opacity}
-              onChange={(e) => onOpacityChange(Number(e.target.value))}
-              className="w-24 hud-slider"
-              style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
-            />
-            <span className="w-8 text-right text-[10px] text-neutral-400">
-              {Math.round(opacity * 100)}%
-            </span>
-          </div>
-
-          <div className="text-[10px] text-neutral-500">
-            NASA GIBS · VIIRS SNPP true-color · daily
-          </div>
-        </>
-      )}
+        ))}
       </div>
     </HudPanel>
   );
 }
 
-interface GibsOverlayPanelProps {
-  label: string;
-  caption: string;
-  enabled: boolean;
-  onToggle: (on: boolean) => void;
+interface OverlayPanelProps {
+  active: OverlayKind | null;
+  onChange: (k: OverlayKind | null) => void;
   opacity: number;
   onOpacityChange: (o: number) => void;
+  weatherProps: {
+    frames: { time: number; date: string; urls: string[] }[];
+    frameIndex: number;
+    onFrameIndex: (i: number) => void;
+    isPlaying: boolean;
+    onPlayingChange: (p: boolean) => void;
+    loading: boolean;
+  };
 }
 
-function GibsOverlayPanel({
-  label,
-  caption,
-  enabled,
-  onToggle,
+function OverlayPanel({
+  active,
+  onChange,
   opacity,
   onOpacityChange,
-}: GibsOverlayPanelProps) {
+  weatherProps,
+}: OverlayPanelProps) {
+  const tabs: { key: OverlayKind | null; label: string }[] = [
+    { key: null, label: "Off" },
+    { key: "clouds", label: "Clouds" },
+    { key: "rail", label: "Rail" },
+    { key: "fires", label: "Fires" },
+    { key: "ndvi", label: "NDVI" },
+  ];
+
+  const caption =
+    active === "clouds"
+      ? "NASA GIBS · VIIRS SNPP true-color · daily"
+      : active === "rail"
+        ? "OpenRailwayMap · OSM"
+        : active === "fires"
+          ? "GOES-East/West · 10 min · Americas + Pacific"
+          : active === "ndvi"
+            ? "MODIS Terra · 8-day · 1km"
+            : null;
+
+  const f = weatherProps;
+  const currentFrame = f.frames[f.frameIndex];
+
   return (
-    <HudPanel label={label}>
-      <div className="flex flex-col items-stretch gap-2">
-        <div className="flex items-center justify-between">
-          <span />
-          <LedToggle
-            enabled={enabled}
-            onToggle={() => onToggle(!enabled)}
-            label={enabled ? "Turn off" : "Turn on"}
-          />
+    <HudPanel label="Overlay">
+      <div className="flex flex-col gap-2">
+        <div className="hud-tab-row">
+          {tabs.map((t) => (
+            <button
+              key={String(t.key)}
+              type="button"
+              data-active={active === t.key}
+              className="hud-tab"
+              onClick={() => onChange(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {enabled && (
+        {active === "clouds" && f.frames.length > 0 && currentFrame && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => f.onPlayingChange(!f.isPlaying)}
+                className="hud-btn-ghost"
+                aria-label={f.isPlaying ? "Pause" : "Play"}
+              >
+                {f.isPlaying ? (
+                  <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor">
+                    <rect x="1.5" y="1" width="2" height="8" />
+                    <rect x="6.5" y="1" width="2" height="8" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor">
+                    <path d="M2 1 L9 5 L2 9 Z" />
+                  </svg>
+                )}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={f.frames.length - 1}
+                step={1}
+                value={f.frameIndex}
+                onChange={(e) => {
+                  f.onPlayingChange(false);
+                  f.onFrameIndex(Number(e.target.value));
+                }}
+                className="hud-slider flex-1"
+                style={{
+                  ["--hud-fill" as string]: `${Math.round((f.frameIndex / Math.max(1, f.frames.length - 1)) * 100)}%`,
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-[color:var(--hud-text-muted)]">
+                {new Date(currentFrame.time * 1000).toLocaleDateString([], {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                })}
+              </span>
+              <span className="text-[color:var(--hud-text-muted)]">
+                {f.frameIndex + 1}/{f.frames.length}
+                {f.loading && " · loading…"}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {active !== null && (
           <>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase text-neutral-500">Opacity</span>
+              <span className="hud-label text-[9px]">Opacity</span>
               <input
                 type="range"
                 min={0}
@@ -1268,65 +1275,18 @@ function GibsOverlayPanel({
                 step={0.05}
                 value={opacity}
                 onChange={(e) => onOpacityChange(Number(e.target.value))}
-                className="w-24 hud-slider"
+                className="hud-slider flex-1"
                 style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
               />
-              <span className="w-8 text-right text-[10px] text-neutral-400">
+              <span className="hud-mono w-8 text-right text-[10px] text-[color:var(--hud-text-muted)]">
                 {Math.round(opacity * 100)}%
               </span>
             </div>
-            <div className="text-[10px] text-neutral-500">{caption}</div>
+            {caption && (
+              <div className="text-[10px] text-[color:var(--hud-text-muted)]">{caption}</div>
+            )}
           </>
         )}
-      </div>
-    </HudPanel>
-  );
-}
-
-interface RailwayPanelProps {
-  enabled: boolean;
-  onToggle: (on: boolean) => void;
-  opacity: number;
-  onOpacityChange: (o: number) => void;
-}
-
-function RailwayPanel({
-  enabled,
-  onToggle,
-  opacity,
-  onOpacityChange,
-}: RailwayPanelProps) {
-  return (
-    <HudPanel label="Rail">
-      <div className="flex flex-col items-stretch gap-2">
-      <div className="flex items-center justify-between">
-        <span />
-        <LedToggle enabled={enabled} onToggle={() => onToggle(!enabled)} label={enabled ? "Turn off" : "Turn on"} />
-      </div>
-
-      {enabled && (
-        <>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase text-neutral-500">Opacity</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={opacity}
-              onChange={(e) => onOpacityChange(Number(e.target.value))}
-              className="w-24 hud-slider"
-              style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
-            />
-            <span className="w-8 text-right text-[10px] text-neutral-400">
-              {Math.round(opacity * 100)}%
-            </span>
-          </div>
-          <div className="text-[10px] text-neutral-500">
-            OpenRailwayMap · OSM
-          </div>
-        </>
-      )}
       </div>
     </HudPanel>
   );
@@ -1377,13 +1337,18 @@ function TimelinePanel({
       <div className="flex flex-col items-stretch gap-2">
       <div className="flex items-center justify-between">
         {state.kind === "searching" || state.kind === "loading" ? (
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-sky-400" aria-label="Loading" />
-        ) : null}
+          <span
+            className="inline-block h-2 w-2 animate-pulse rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]"
+            aria-label="Loading"
+          />
+        ) : (
+          <span />
+        )}
         {active && (
           <button
             type="button"
             onClick={onClear}
-            className="text-[10px] text-neutral-500 hover:text-neutral-200"
+            className="text-[10px] uppercase tracking-wider text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
           >
             clear
           </button>
@@ -1395,24 +1360,24 @@ function TimelinePanel({
           type="button"
           onClick={onStart}
           disabled={!credentials || !zoomOk || state.kind === "searching"}
-          className="rounded-lg bg-sky-500 px-3 py-1.5 font-medium text-black hover:bg-sky-400 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+          className="hud-btn-primary"
         >
-          {state.kind === "searching" ? "Searching catalog…" : "Start for this view"}
+          {state.kind === "searching" ? "Searching…" : "Start for this view"}
         </button>
       )}
 
       {!credentials && (
-        <p className="max-w-[220px] text-[11px] text-neutral-400">
-          Add credentials in the header to load snapshots.
+        <p className="max-w-[260px] text-[11px] text-[color:var(--hud-text-muted)]">
+          Add credentials below to load snapshots.
         </p>
       )}
       {credentials && !zoomOk && !active && (
-        <p className="max-w-[220px] text-[11px] text-amber-400">
+        <p className="max-w-[260px] text-[11px] text-[color:var(--hud-warn)]">
           Zoom in to z{minZoom} or closer first
         </p>
       )}
       {state.kind === "error" && (
-        <p className="max-w-[240px] break-words text-[11px] text-red-400">
+        <p className="max-w-[260px] break-words text-[11px] text-[color:var(--hud-danger)]">
           {state.message}
         </p>
       )}
@@ -1424,20 +1389,20 @@ function TimelinePanel({
               type="button"
               onClick={handlePrev}
               disabled={snapshotIndex <= 0}
-              className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:bg-neutral-800 disabled:opacity-40"
+              className="hud-btn-ghost"
               aria-label="Previous snapshot"
             >
               ‹
             </button>
             <div className="flex-1 text-center">
-              <div className="font-mono text-[11px] text-neutral-100">
+              <div className="hud-mono text-[11px] text-[color:var(--hud-text)]">
                 {new Date(current.datetime).toLocaleDateString(undefined, {
                   year: "numeric",
                   month: "short",
                   day: "numeric",
                 })}
               </div>
-              <div className="text-[10px] text-neutral-500">
+              <div className="text-[10px] text-[color:var(--hud-text-muted)]">
                 {current.cloudCover != null
                   ? `${current.cloudCover.toFixed(0)}% cloud`
                   : "cloud: —"}
@@ -1449,7 +1414,7 @@ function TimelinePanel({
               type="button"
               onClick={handleNext}
               disabled={snapshotIndex >= snapshots.length - 1}
-              className="flex h-6 w-6 items-center justify-center rounded-md border border-neutral-700 text-neutral-300 hover:bg-neutral-800 disabled:opacity-40"
+              className="hud-btn-ghost"
               aria-label="Next snapshot"
             >
               ›
@@ -1463,7 +1428,7 @@ function TimelinePanel({
           />
 
           <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase text-neutral-500">Opacity</span>
+            <span className="hud-label text-[9px]">Opacity</span>
             <input
               type="range"
               min={0}
@@ -1471,10 +1436,10 @@ function TimelinePanel({
               step={0.05}
               value={opacity}
               onChange={(e) => onOpacityChange(Number(e.target.value))}
-              className="w-24 hud-slider"
+              className="hud-slider flex-1"
               style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
             />
-            <span className="w-8 text-right text-[10px] text-neutral-400">
+            <span className="hud-mono w-8 text-right text-[10px] text-[color:var(--hud-text-muted)]">
               {Math.round(opacity * 100)}%
             </span>
           </div>
@@ -1525,8 +1490,9 @@ function SnapshotCalendar({ snapshots, activeIndex, onSelect }: SnapshotCalendar
   }
 
   function dotColor(cc: number | null, isActive: boolean) {
-    if (isActive) return "bg-white ring-1 ring-white";
-    if (cc == null) return "bg-sky-400";
+    if (isActive)
+      return "bg-[color:var(--hud-accent)] ring-1 ring-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]";
+    if (cc == null) return "bg-[color:var(--hud-accent)]/70";
     if (cc < 10) return "bg-emerald-400";
     if (cc < 30) return "bg-emerald-500/90";
     if (cc < 60) return "bg-amber-400";
