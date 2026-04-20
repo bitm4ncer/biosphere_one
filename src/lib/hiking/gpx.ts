@@ -1,4 +1,10 @@
-import type { RouteCandidate, Station } from "./types";
+import type { RouteCandidate } from "./types";
+
+interface GpxWaypoint {
+  name: string;
+  lat: number;
+  lon: number;
+}
 
 function esc(s: string): string {
   return s
@@ -10,7 +16,12 @@ function esc(s: string): string {
 
 export function routeToGpx(
   candidate: RouteCandidate,
-  opts: { name?: string; start?: Station | null; end?: Station | null } = {},
+  opts: {
+    name?: string;
+    start?: GpxWaypoint | null;
+    end?: GpxWaypoint | null;
+    vias?: GpxWaypoint[];
+  } = {},
 ): string {
   const trkName = esc(opts.name ?? "Hiking route");
   const points = candidate.coordinates
@@ -24,6 +35,11 @@ export function routeToGpx(
   if (opts.start) {
     wpts.push(
       `  <wpt lat="${opts.start.lat.toFixed(6)}" lon="${opts.start.lon.toFixed(6)}"><name>${esc(opts.start.name)}</name><sym>Train Station</sym></wpt>`,
+    );
+  }
+  for (const v of opts.vias ?? []) {
+    wpts.push(
+      `  <wpt lat="${v.lat.toFixed(6)}" lon="${v.lon.toFixed(6)}"><name>${esc(v.name)}</name><sym>Waypoint</sym></wpt>`,
     );
   }
   if (opts.end) {

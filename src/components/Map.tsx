@@ -20,6 +20,7 @@ import { SidebarToggle } from "./SidebarToggle";
 import { HikingToggle } from "./HikingToggle";
 import { HikingPanel } from "./hud/HikingPanel";
 import { useHikingLayers } from "./hiking/useHikingLayers";
+import { useAmbientStations } from "./hiking/useAmbientStations";
 
 const CLOUDS_DAYS_BACK = 7;
 const CLOUDS_ANIM_INTERVAL_MS = 900;
@@ -416,6 +417,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const [mapInstance, setMapInstance] = useState<MLMap | null>(null);
 
   useHikingLayers(mapInstance);
+  useAmbientStations(mapInstance, railwayOn);
 
   const toggleSidebar = (pane: SidebarPane) => {
     setActiveSidebar((current) => (current === pane ? null : pane));

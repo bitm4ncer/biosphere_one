@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { Map as MLMap } from "maplibre-gl";
 import { HudPanel } from "./HudPanel";
-import { useHiking, selectStation } from "@/lib/hiking/store";
+import { useHiking, getStart, getEnd, getVias } from "@/lib/hiking/store";
 import { fetchStationsAround } from "@/lib/hiking/overpass";
 import { searchHikingRoutes } from "@/lib/hiking/search";
 import { BROUTER_PROFILES, type BrouterProfile } from "@/lib/hiking/routing";
@@ -22,8 +22,7 @@ export function HikingPanel({ mapRef }: Props) {
   const profiles = useHiking((s) => s.profiles);
   const center = useHiking((s) => s.center);
   const stations = useHiking((s) => s.stations);
-  const startId = useHiking((s) => s.startId);
-  const endId = useHiking((s) => s.endId);
+  const waypoints = useHiking((s) => s.waypoints);
   const candidates = useHiking((s) => s.candidates);
   const selectedCandidateId = useHiking((s) => s.selectedCandidateId);
   const phase = useHiking((s) => s.phase);
@@ -37,7 +36,9 @@ export function HikingPanel({ mapRef }: Props) {
   const toggleProfile = useHiking((s) => s.toggleProfile);
   const setCenter = useHiking((s) => s.setCenter);
   const setStations = useHiking((s) => s.setStations);
-  const clearStationSelection = useHiking((s) => s.clearStationSelection);
+  const clearWaypoints = useHiking((s) => s.clearWaypoints);
+  const reverseWaypoints = useHiking((s) => s.reverseWaypoints);
+  const removeWaypoint = useHiking((s) => s.removeWaypoint);
   const setCandidates = useHiking((s) => s.setCandidates);
   const selectCandidate = useHiking((s) => s.selectCandidate);
   const setPhase = useHiking((s) => s.setPhase);
@@ -121,14 +122,11 @@ export function HikingPanel({ mapRef }: Props) {
   }, [center, radiusKm, setPhase, setStations, setNotice]);
 
   const handleFindRoutes = useCallback(async () => {
-    const start = selectStation(stations, startId);
-    const end = selectStation(stations, endId);
+    const start = getStart(waypoints);
+    const end = getEnd(waypoints);
+    const vias = getVias(waypoints);
     if (!start || !end) {
-      setNotice("Pick a start and end station on the map.");
-      return;
-    }
-    if (start.id === end.id) {
-      setNotice("Start and end must differ.");
+      setNotice("Pick a start and end — tap stations, long-press the map, or search.");
       return;
     }
     if (profiles.length === 0) {
@@ -144,6 +142,7 @@ export function HikingPanel({ mapRef }: Props) {
       const result = await searchHikingRoutes({
         from: { lat: start.lat, lon: start.lon },
         to: { lat: end.lat, lon: end.lon },
+        vias: vias.map((v) => ({ lat: v.lat, lon: v.lon })),
         distanceKm: [distanceMin, distanceMax],
         profiles: profiles as BrouterProfile[],
         greenMin,
@@ -181,9 +180,7 @@ export function HikingPanel({ mapRef }: Props) {
       setPhase({ kind: "error", message: (err as Error).message });
     }
   }, [
-    stations,
-    startId,
-    endId,
+    waypoints,
     profiles,
     distanceMin,
     distanceMax,
@@ -198,15 +195,27 @@ export function HikingPanel({ mapRef }: Props) {
     if (!selectedCandidateId) return;
     const cand = candidates.find((c) => c.id === selectedCandidateId);
     if (!cand) return;
-    const start = selectStation(stations, startId);
-    const end = selectStation(stations, endId);
-    const name = `${start?.name ?? "Start"} → ${end?.name ?? "End"} · ${cand.distanceKm.toFixed(1)} km`;
-    const gpx = routeToGpx(cand, { name, start, end });
-    const filename = `hike-${start?.name ?? "start"}-${end?.name ?? "end"}-${cand.distanceKm.toFixed(1)}km.gpx`
+    const start = getStart(waypoints);
+    const end = getEnd(waypoints);
+    const vias = getVias(waypoints);
+    const startName = start?.label ?? "Start";
+    const endName = end?.label ?? "End";
+    const name = `${startName} → ${endName} · ${cand.distanceKm.toFixed(1)} km`;
+    const gpx = routeToGpx(cand, {
+      name,
+      start: start ? { name: startName, lat: start.lat, lon: start.lon } : null,
+      end: end ? { name: endName, lat: end.lat, lon: end.lon } : null,
+      vias: vias.map((v, i) => ({
+        name: v.label ?? `Via ${i + 1}`,
+        lat: v.lat,
+        lon: v.lon,
+      })),
+    });
+    const filename = `hike-${startName}-${endName}-${cand.distanceKm.toFixed(1)}km.gpx`
       .replace(/\s+/g, "_")
       .replace(/[^a-zA-Z0-9._\-]/g, "");
     downloadGpx(filename, gpx);
-  }, [selectedCandidateId, candidates, stations, startId, endId]);
+  }, [selectedCandidateId, candidates, waypoints]);
 
   const handleClearAll = useCallback(() => {
     abortRef.current?.abort();
@@ -214,17 +223,12 @@ export function HikingPanel({ mapRef }: Props) {
     setEnabled(true);
   }, [reset, setEnabled]);
 
-  const start = useMemo(
-    () => selectStation(stations, startId),
-    [stations, startId],
-  );
-  const end = useMemo(
-    () => selectStation(stations, endId),
-    [stations, endId],
-  );
+  const tripStart = useMemo(() => getStart(waypoints), [waypoints]);
+  const tripEnd = useMemo(() => getEnd(waypoints), [waypoints]);
+  const tripVias = useMemo(() => getVias(waypoints), [waypoints]);
 
   const canFindRoutes =
-    Boolean(start) && Boolean(end) && profiles.length > 0;
+    Boolean(tripStart) && Boolean(tripEnd) && profiles.length > 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -326,16 +330,46 @@ export function HikingPanel({ mapRef }: Props) {
           ) : (
             <>
               <div className="flex flex-col gap-1">
-                <EndpointBadge role="start" station={start} />
-                <EndpointBadge role="end" station={end} />
-                {(start || end) && (
-                  <button
-                    type="button"
-                    onClick={clearStationSelection}
-                    className="self-end text-[10px] uppercase tracking-wider text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
-                  >
-                    unpick
-                  </button>
+                <WaypointRow
+                  role="start"
+                  label={tripStart?.label ?? null}
+                  onRemove={
+                    tripStart ? () => removeWaypoint(tripStart.id) : undefined
+                  }
+                />
+                {tripVias.map((v, i) => (
+                  <WaypointRow
+                    key={v.id}
+                    role="via"
+                    label={v.label ?? `Via ${i + 1}`}
+                    onRemove={() => removeWaypoint(v.id)}
+                  />
+                ))}
+                <WaypointRow
+                  role="end"
+                  label={tripEnd?.label ?? null}
+                  onRemove={
+                    tripEnd ? () => removeWaypoint(tripEnd.id) : undefined
+                  }
+                />
+                {waypoints.length > 0 && (
+                  <div className="flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={reverseWaypoints}
+                      disabled={waypoints.length < 2}
+                      className="text-[10px] uppercase tracking-wider text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)] disabled:opacity-40"
+                    >
+                      reverse
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearWaypoints}
+                      className="text-[10px] uppercase tracking-wider text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
+                    >
+                      clear
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -555,30 +589,42 @@ function DualRangeRow({
   );
 }
 
-function EndpointBadge({
+function WaypointRow({
   role,
-  station,
+  label,
+  onRemove,
 }: {
-  role: "start" | "end";
-  station: { name: string } | null;
+  role: "start" | "via" | "end";
+  label: string | null;
+  onRemove?: () => void;
 }) {
-  const dotColor = role === "start" ? "#7df09e" : "#ff6b82";
+  const dotColor =
+    role === "start" ? "#7df09e" : role === "end" ? "#ff6b82" : "#d4ff38";
   return (
     <div className="flex items-center gap-2 rounded-sm border border-[color:var(--hud-border)] bg-[rgba(255,255,255,0.02)] px-2 py-1">
       <span
         aria-hidden
         className="inline-block h-2 w-2 rounded-full"
-        style={{
-          background: dotColor,
-          boxShadow: `0 0 6px ${dotColor}80`,
-        }}
+        style={{ background: dotColor, boxShadow: `0 0 6px ${dotColor}80` }}
       />
       <span className="hud-label w-10 text-[9px]">{role}</span>
       <span className="min-w-0 flex-1 truncate text-[11px] text-[color:var(--hud-text)]">
-        {station ? station.name : (
-          <span className="text-[color:var(--hud-text-muted)]">— tap a station marker —</span>
+        {label ?? (
+          <span className="text-[color:var(--hud-text-muted)]">
+            — tap a station or long-press the map —
+          </span>
         )}
       </span>
+      {onRemove && label && (
+        <button
+          type="button"
+          aria-label={`Remove ${role}`}
+          onClick={onRemove}
+          className="text-[11px] text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

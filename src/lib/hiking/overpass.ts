@@ -1,4 +1,4 @@
-import type { LatLng, Station } from "./types";
+import type { LatLng, Station, StationTier } from "./types";
 
 const ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -56,6 +56,64 @@ async function overpass(
   );
 }
 
+/**
+ * Classify a station node into a visual tier from its OSM tags alone.
+ * ICE/IC-class stations are detected via `usage=main` + `train=yes`, with a
+ * name-based boost for "Hauptbahnhof" / "Hbf" / "Central".
+ */
+export function tierFromTags(tags: Record<string, string>): StationTier {
+  const railway = tags.railway ?? "";
+  const station = tags.station ?? "";
+
+  if (railway === "tram_stop" || station === "tram") return "tram";
+  if (station === "subway" || tags.subway === "yes") return "subway";
+  if (
+    station === "light_rail" ||
+    tags.light_rail === "yes" ||
+    /s-?bahn/i.test(tags.network ?? "") ||
+    /s-?bahn/i.test(tags.operator ?? "")
+  ) {
+    return "sBahn";
+  }
+  if (railway === "halt") return "halt";
+
+  const name = [tags.name, tags["name:de"], tags["name:en"]]
+    .filter(Boolean)
+    .join(" ");
+  const isHbf = /\b(hbf|hauptbahnhof|central)\b/i.test(name);
+
+  if (tags.train === "yes" && tags.usage === "main") return "intercity";
+  if (isHbf) return "intercity";
+  if (tags.train === "yes" && tags.usage === "branch") return "regional";
+  if (railway === "station") return "regional";
+  return "halt";
+}
+
+function nodeToStation(node: OverpassNode): Station | null {
+  const tags = node.tags ?? {};
+  const name = tags.name ?? tags["name:de"] ?? tags["name:en"] ?? tags.ref ?? "";
+  if (!name) return null;
+  return {
+    id: `node/${node.id}`,
+    name,
+    lat: node.lat,
+    lon: node.lon,
+    kind: tags.railway ?? "station",
+    tier: tierFromTags(tags),
+    ref: tags.ref,
+    tags,
+  };
+}
+
+function dedupeByLocation(stations: Station[]): Station[] {
+  const seen = new Map<string, Station>();
+  for (const s of stations) {
+    const key = `${s.lat.toFixed(4)},${s.lon.toFixed(4)},${s.name}`;
+    if (!seen.has(key)) seen.set(key, s);
+  }
+  return Array.from(seen.values());
+}
+
 export async function fetchStationsAround(
   center: LatLng,
   radiusKm: number,
@@ -67,6 +125,7 @@ export async function fetchStationsAround(
     (
       node[railway=station](around:${radiusM},${center.lat},${center.lon});
       node[railway=halt](around:${radiusM},${center.lat},${center.lon});
+      node[railway=tram_stop](around:${radiusM},${center.lat},${center.lon});
     );
     out body;
   `;
@@ -74,26 +133,40 @@ export async function fetchStationsAround(
   const out: Station[] = [];
   for (const el of data.elements) {
     if (el.type !== "node") continue;
-    const tags = el.tags ?? {};
-    const name = tags.name ?? tags["name:de"] ?? tags["name:en"] ?? tags.ref ?? "";
-    if (!name) continue;
-    out.push({
-      id: `node/${el.id}`,
-      name,
-      lat: el.lat,
-      lon: el.lon,
-      kind: tags.railway ?? "station",
-      ref: tags.ref,
-      tags,
-    });
+    const s = nodeToStation(el);
+    if (s) out.push(s);
   }
-  // dedupe by coarse location (same stop may be mapped twice)
-  const seen = new Map<string, Station>();
-  for (const s of out) {
-    const key = `${s.lat.toFixed(4)},${s.lon.toFixed(4)},${s.name}`;
-    if (!seen.has(key)) seen.set(key, s);
+  return dedupeByLocation(out);
+}
+
+/**
+ * Fetch rail stations within a bounding box. Used for the ambient
+ * auto-stations layer shown alongside the rail overlay.
+ *
+ * bbox = [south, west, north, east] (Overpass order).
+ */
+export async function fetchStationsBbox(
+  bbox: [number, number, number, number],
+  signal?: AbortSignal,
+): Promise<Station[]> {
+  const [s, w, n, e] = bbox;
+  const q = `
+    [out:json][timeout:25];
+    (
+      node[railway=station](${s},${w},${n},${e});
+      node[railway=halt](${s},${w},${n},${e});
+      node[railway=tram_stop](${s},${w},${n},${e});
+    );
+    out body;
+  `;
+  const data = await overpass(q, signal);
+  const out: Station[] = [];
+  for (const el of data.elements) {
+    if (el.type !== "node") continue;
+    const st = nodeToStation(el);
+    if (st) out.push(st);
   }
-  return Array.from(seen.values());
+  return dedupeByLocation(out);
 }
 
 /**

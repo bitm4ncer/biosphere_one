@@ -9,6 +9,8 @@ import { applyGreenRatios, routesBbox } from "./score";
 interface SearchParams {
   from: LatLng;
   to: LatLng;
+  /** Optional intermediate waypoints the route must pass through (in order). */
+  vias?: LatLng[];
   /** [min, max] in kilometers. Use [0, Infinity] to disable filtering. */
   distanceKm: [number, number];
   profiles?: BrouterProfile[];
@@ -70,6 +72,7 @@ export async function searchHikingRoutes(
       const alts = await fetchBrouterAlternatives({
         from: params.from,
         to: params.to,
+        vias: params.vias,
         profile,
         maxAlternatives: 4,
         signal: params.signal,
