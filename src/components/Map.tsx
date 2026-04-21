@@ -21,7 +21,6 @@ import { HikingToggle } from "./HikingToggle";
 import { HikingPanel } from "./hud/HikingPanel";
 import { useHikingLayers } from "./hiking/useHikingLayers";
 import { useAmbientStations } from "./hiking/useAmbientStations";
-import { useRailLines } from "./hiking/useRailLines";
 import { useAutoRoute } from "./hiking/useAutoRoute";
 
 const CLOUDS_DAYS_BACK = 7;
@@ -420,7 +419,6 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 
   useHikingLayers(mapInstance);
   useAmbientStations(mapInstance, railwayOn);
-  useRailLines(mapInstance, railwayOn);
   useAutoRoute(mapInstance);
 
   const toggleSidebar = (pane: SidebarPane) => {
@@ -755,14 +753,34 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     updateWeatherOpacity(map, weatherOpacity);
   }, [weatherOn, weatherOpacity]);
 
-  // Rail overlay now uses a vector layer driven by useRailLines(); the
-  // OpenRailwayMap raster is kept only as a style-change cleanup path so
-  // previously-installed layers get torn down when switching basemaps.
+  useEffect(() => {
+    if (!railwayOn) {
+      const map = mapRef.current;
+      if (map) removeRailwayLayer(map);
+    }
+  }, [railwayOn]);
+
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    removeRailwayLayer(map);
+    if (!map || !railwayOn) return;
+    const apply = () => ensureRailwayLayer(map, railwayOpacity);
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [railwayOn, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !railwayOn) return;
+    updateRailwayOpacity(map, railwayOpacity);
+  }, [railwayOn, railwayOpacity]);
 
   useEffect(() => {
     if (!firesOn) {
