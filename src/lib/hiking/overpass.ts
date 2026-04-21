@@ -170,6 +170,48 @@ export async function fetchStationsBbox(
 }
 
 /**
+ * Fetch rail way geometries within a bounding box as a GeoJSON
+ * FeatureCollection. Each feature carries a `kind` property so the caller
+ * can style mainline rail, tram, subway etc. differently.
+ *
+ * bbox = [south, west, north, east] (Overpass order).
+ */
+export async function fetchRailLinesBbox(
+  bbox: [number, number, number, number],
+  signal?: AbortSignal,
+): Promise<GeoJSON.FeatureCollection<GeoJSON.LineString>> {
+  const [s, w, n, e] = bbox;
+  const q = `
+    [out:json][timeout:25];
+    (
+      way[railway~"^(rail|light_rail|narrow_gauge|subway|tram|monorail)$"][service!~"."](${s},${w},${n},${e});
+    );
+    out geom;
+  `;
+  const data = await overpass(q, signal);
+  const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+  for (const el of data.elements) {
+    if (el.type !== "way" || !el.geometry || el.geometry.length < 2) continue;
+    const tags = el.tags ?? {};
+    features.push({
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: el.geometry.map((g) => [g.lon, g.lat]),
+      },
+      properties: {
+        id: el.id,
+        kind: tags.railway ?? "rail",
+        usage: tags.usage ?? null,
+        tunnel: tags.tunnel === "yes",
+        bridge: tags.bridge === "yes",
+      },
+    });
+  }
+  return { type: "FeatureCollection", features };
+}
+
+/**
  * Fetch green/natural polygons within a bounding box.
  * bbox = [south, west, north, east] (Overpass order).
  */

@@ -24,6 +24,8 @@ const ROUTE_LAYER_PRIMARY = "hiking-routes-primary";
 const ROUTE_LAYER_CASING = "hiking-routes-casing";
 const ROUTE_LAYER_ALT = "hiking-routes-alt";
 const ROUTE_LAYER_ALT_CASING = "hiking-routes-alt-casing";
+const ROUTE_LABEL_SOURCE = "hiking-route-labels";
+const ROUTE_LABEL_LAYER = "hiking-route-labels-layer";
 
 const ROUTE_COLORS = {
   primary: "#d4ff38",
@@ -124,6 +126,38 @@ function waypointsFeatureCollection(
         idx: i,
       },
     })),
+  };
+}
+
+function routeLabelsFeatureCollection(
+  candidates: RouteCandidate[],
+  selectedId: string | null,
+): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: candidates.map((c) => {
+      const mid = c.coordinates[Math.floor(c.coordinates.length / 2)] ?? [
+        0, 0,
+      ];
+      const selected = c.id === selectedId;
+      const dur = `${Math.round(c.durationMin)} min`;
+      const asc = `+${Math.round(c.ascentM)} m`;
+      const gp =
+        c.greenRatio == null ? "" : ` · ${Math.round(c.greenRatio * 100)}% green`;
+      return {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [mid[0], mid[1]],
+        },
+        properties: {
+          id: c.id,
+          selected,
+          primary: `${c.distanceKm.toFixed(1)} km`,
+          secondary: `${dur} · ${asc}${gp}`,
+        },
+      };
+    }),
   };
 }
 
@@ -509,6 +543,8 @@ export function useHikingLayers(map: MLMap | null) {
     if (!map) return;
     const apply = () => {
       if (candidates.length === 0) {
+        removeLayerIfExists(map, ROUTE_LABEL_LAYER);
+        removeSourceIfExists(map, ROUTE_LABEL_SOURCE);
         removeLayerIfExists(map, ROUTE_LAYER_ALT);
         removeLayerIfExists(map, ROUTE_LAYER_ALT_CASING);
         removeLayerIfExists(map, ROUTE_LAYER_PRIMARY);
@@ -518,6 +554,11 @@ export function useHikingLayers(map: MLMap | null) {
       }
       const fc = routesFeatureCollection(candidates, selectedCandidateId);
       ensureSource(map, ROUTE_SOURCE, fc);
+      const labelsFc = routeLabelsFeatureCollection(
+        candidates,
+        selectedCandidateId,
+      );
+      ensureSource(map, ROUTE_LABEL_SOURCE, labelsFc);
 
       if (!map.getLayer(ROUTE_LAYER_ALT_CASING)) {
         map.addLayer({
@@ -573,6 +614,52 @@ export function useHikingLayers(map: MLMap | null) {
             "line-color": ["get", "color"],
             "line-width": 4,
             "line-opacity": 0.95,
+          },
+        });
+      }
+      if (!map.getLayer(ROUTE_LABEL_LAYER)) {
+        map.addLayer({
+          id: ROUTE_LABEL_LAYER,
+          type: "symbol",
+          source: ROUTE_LABEL_SOURCE,
+          layout: {
+            "text-field": [
+              "format",
+              ["get", "primary"],
+              { "font-scale": 1.1, "text-font": ["literal", ["Noto Sans Bold"]] },
+              "\n",
+              {},
+              ["get", "secondary"],
+              { "font-scale": 0.78 },
+            ],
+            "text-size": 12,
+            "text-anchor": "center",
+            "text-justify": "center",
+            "text-allow-overlap": true,
+            "text-ignore-placement": true,
+            "text-padding": 4,
+          },
+          paint: {
+            "text-color": [
+              "case",
+              ["get", "selected"],
+              "#0a0a0b",
+              "#e5e7eb",
+            ],
+            "text-halo-color": [
+              "case",
+              ["get", "selected"],
+              "#d4ff38",
+              "#0a0a0b",
+            ],
+            "text-halo-width": 2.5,
+            "text-halo-blur": 0.3,
+            "text-opacity": [
+              "case",
+              ["get", "selected"],
+              0.98,
+              0.7,
+            ],
           },
         });
       }
