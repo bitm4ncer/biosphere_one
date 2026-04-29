@@ -17,9 +17,45 @@ const ROUTE_LAYER_ALT = "hiking-routes-alt";
 const ROUTE_LAYER_ALT_CASING = "hiking-routes-alt-casing";
 
 const COLOR_PRIMARY = "#d4ff38"; // accent
-const COLOR_START = "#7df09e";
-const COLOR_END = "#ff6b82";
-const COLOR_VIA = "#d4ff38";
+export const COLOR_START = "#7df09e";
+export const COLOR_END = "#ff6b82";
+
+function hashStr(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+// Map [0..360) into the hue ranges that don't clash with start-green or
+// end-red: [30..80] (warm yellows/oranges) ∪ [185..330] (cyan→pink).
+function safeHue(rawHue: number): number {
+  const total = 50 + 145; // 195 deg of usable hue
+  const x = ((rawHue % 360) / 360) * total;
+  if (x < 50) return 30 + x;
+  return 185 + (x - 50);
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12;
+    const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+    return Math.round(255 * c)
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/** Stable pastel hex color for a via waypoint. Spaced by golden angle so
+ *  consecutive vias never collide visually even if their ids hash close. */
+export function pastelForWaypoint(id: string, index: number): string {
+  const base = (hashStr(id) % 360) + index * 137.508;
+  return hslToHex(safeHue(base), 0.78, 0.76);
+}
 
 const HIKING_Z_ORDER: string[] = [
   ROUTE_LAYER_ALT_CASING,
@@ -70,16 +106,26 @@ function waypointFeatures(waypoints: Waypoint[]): GeoJSON.FeatureCollection {
   const last = waypoints.length - 1;
   return {
     type: "FeatureCollection",
-    features: waypoints.map((w, i) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [w.lon, w.lat] },
-      properties: {
-        id: w.id,
-        index: i,
-        number: String(i + 1),
-        role: i === 0 ? "start" : i === last ? "end" : "via",
-      },
-    })),
+    features: waypoints.map((w, i) => {
+      const role = i === 0 ? "start" : i === last ? "end" : "via";
+      const color =
+        role === "start"
+          ? COLOR_START
+          : role === "end"
+            ? COLOR_END
+            : pastelForWaypoint(w.id, i);
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [w.lon, w.lat] },
+        properties: {
+          id: w.id,
+          index: i,
+          number: String(i + 1),
+          role,
+          color,
+        },
+      };
+    }),
   };
 }
 
@@ -152,15 +198,7 @@ export function useHikingLayers(map: MLMap | null) {
           paint: {
             "circle-radius": 14,
             "circle-color": "transparent",
-            "circle-stroke-color": [
-              "match",
-              ["get", "role"],
-              "start",
-              COLOR_START,
-              "end",
-              COLOR_END,
-              COLOR_VIA,
-            ],
+            "circle-stroke-color": ["get", "color"],
             "circle-stroke-width": 2,
             "circle-stroke-opacity": 0.55,
           },
@@ -173,15 +211,7 @@ export function useHikingLayers(map: MLMap | null) {
           source: WAYPOINT_SOURCE,
           paint: {
             "circle-radius": 10,
-            "circle-color": [
-              "match",
-              ["get", "role"],
-              "start",
-              COLOR_START,
-              "end",
-              COLOR_END,
-              COLOR_VIA,
-            ],
+            "circle-color": ["get", "color"],
             "circle-stroke-color": "#0a0a0b",
             "circle-stroke-width": 2,
             "circle-opacity": 0.95,
