@@ -407,6 +407,65 @@ function setRailStationsData(map: MLMap, data: GeoJSON.FeatureCollection) {
   if (src?.setData) src.setData(data);
 }
 
+// ── Tile-based rail cache ───────────────────────────────────────────────
+// Keyed by slippy-map tile coords at a fixed zoom. Each cached tile is a
+// 40 km × 30 km Overpass response, so any later pan within an
+// already-loaded tile renders instantly from cache.
+const RAIL_TILE_ZOOM = 10;
+type RailTileData = {
+  lines: GeoJSON.Feature<GeoJSON.LineString>[];
+  stations: { id: string; name: string; lat: number; lon: number }[];
+};
+const railTileCache = new Map<string, RailTileData>();
+const railTileInFlight = new Set<string>();
+
+function lon2tileX(lon: number, z: number): number {
+  return Math.floor(((lon + 180) / 360) * (1 << z));
+}
+function lat2tileY(lat: number, z: number): number {
+  const rad = (lat * Math.PI) / 180;
+  return Math.floor(
+    ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) *
+      (1 << z),
+  );
+}
+function tileX2lon(x: number, z: number): number {
+  return (x / (1 << z)) * 360 - 180;
+}
+function tileY2lat(y: number, z: number): number {
+  const n = Math.PI - (2 * Math.PI * y) / (1 << z);
+  return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+function railTileBbox(
+  z: number,
+  x: number,
+  y: number,
+): [number, number, number, number] {
+  // Overpass order: [south, west, north, east]
+  return [
+    tileY2lat(y + 1, z),
+    tileX2lon(x, z),
+    tileY2lat(y, z),
+    tileX2lon(x + 1, z),
+  ];
+}
+function tilesForBounds(
+  bounds: maplibregl.LngLatBounds,
+  z: number,
+): { x: number; y: number }[] {
+  const xMin = lon2tileX(bounds.getWest(), z);
+  const xMax = lon2tileX(bounds.getEast(), z);
+  const yMin = lat2tileY(bounds.getNorth(), z);
+  const yMax = lat2tileY(bounds.getSouth(), z);
+  const out: { x: number; y: number }[] = [];
+  for (let x = xMin; x <= xMax; x += 1) {
+    for (let y = yMin; y <= yMax; y += 1) {
+      out.push({ x, y });
+    }
+  }
+  return out;
+}
+
 function removeRailStationsLayer(map: MLMap) {
   if (map.getLayer(RAIL_STATIONS_LABEL_LAYER_ID))
     map.removeLayer(RAIL_STATIONS_LABEL_LAYER_ID);
@@ -1100,62 +1159,103 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       return;
     }
 
-    let ctrl: AbortController | null = null;
-    let timer: number | null = null;
     let cancelled = false;
+    let renderRaf = 0;
 
-    const fetchAndSet = async () => {
+    const renderFromCache = () => {
       if (cancelled) return;
-      const z = map.getZoom();
-      if (z < RAIL_LINES_MIN_ZOOM) {
-        setRailLinesData(map, { type: "FeatureCollection", features: [] });
-        setRailStationsData(map, { type: "FeatureCollection", features: [] });
-        return;
-      }
-      ctrl?.abort();
-      ctrl = new AbortController();
-      try {
-        const b = map.getBounds();
-        const bbox: [number, number, number, number] = [
-          b.getSouth(),
-          b.getWest(),
-          b.getNorth(),
-          b.getEast(),
-        ];
-        const { lines, stations } = await fetchRailNetwork(bbox, ctrl.signal);
-        if (cancelled || ctrl.signal.aborted) return;
-        setRailLinesData(map, lines);
-        // Stations only at higher zoom to keep the dot density readable.
-        if (z >= RAIL_STATIONS_MIN_ZOOM) {
-          setRailStationsData(map, {
-            type: "FeatureCollection",
-            features: stations.map((s) => ({
+      if (renderRaf) cancelAnimationFrame(renderRaf);
+      renderRaf = requestAnimationFrame(() => {
+        if (cancelled) return;
+        const z = map.getZoom();
+        if (z < RAIL_LINES_MIN_ZOOM) {
+          setRailLinesData(map, { type: "FeatureCollection", features: [] });
+          setRailStationsData(map, { type: "FeatureCollection", features: [] });
+          return;
+        }
+        const tiles = tilesForBounds(map.getBounds(), RAIL_TILE_ZOOM);
+        const lineFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+        const lineSeen = new Set<string | number>();
+        const stationFeatures: GeoJSON.Feature[] = [];
+        const stationSeen = new Set<string>();
+        for (const t of tiles) {
+          const data = railTileCache.get(`${t.x}/${t.y}`);
+          if (!data) continue;
+          for (const f of data.lines) {
+            const id = f.properties?.id as string | number | undefined;
+            if (id != null) {
+              if (lineSeen.has(id)) continue;
+              lineSeen.add(id);
+            }
+            lineFeatures.push(f);
+          }
+          for (const s of data.stations) {
+            if (stationSeen.has(s.id)) continue;
+            stationSeen.add(s.id);
+            stationFeatures.push({
               type: "Feature",
               geometry: { type: "Point", coordinates: [s.lon, s.lat] },
               properties: { id: s.id, name: s.name },
-            })),
-          });
-        } else {
-          setRailStationsData(map, { type: "FeatureCollection", features: [] });
+            });
+          }
         }
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        const msg = (err as Error).message ?? "";
-        // 429s from Overpass are expected at low zoom / high pan rate; do
-        // not spam the console with them.
-        if (!msg.includes("429")) console.warn("[rail-network]", err);
+        setRailLinesData(map, {
+          type: "FeatureCollection",
+          features: lineFeatures,
+        });
+        setRailStationsData(map, {
+          type: "FeatureCollection",
+          features: z >= RAIL_STATIONS_MIN_ZOOM ? stationFeatures : [],
+        });
+      });
+    };
+
+    const fetchMissingTiles = () => {
+      if (cancelled) return;
+      if (map.getZoom() < RAIL_LINES_MIN_ZOOM) return;
+      const tiles = tilesForBounds(map.getBounds(), RAIL_TILE_ZOOM);
+      // Cap parallel fetches to avoid hitting Overpass rate limits.
+      const toFetch = tiles.filter((t) => {
+        const key = `${t.x}/${t.y}`;
+        return !railTileCache.has(key) && !railTileInFlight.has(key);
+      });
+      const MAX_PARALLEL = 4;
+      for (const t of toFetch.slice(0, MAX_PARALLEL)) {
+        const key = `${t.x}/${t.y}`;
+        railTileInFlight.add(key);
+        const ctrl = new AbortController();
+        const bbox = railTileBbox(RAIL_TILE_ZOOM, t.x, t.y);
+        fetchRailNetwork(bbox, ctrl.signal)
+          .then(({ lines, stations }) => {
+            railTileCache.set(key, { lines: lines.features, stations });
+            railTileInFlight.delete(key);
+            renderFromCache();
+            // After this tile finishes, kick off any remaining missing tiles
+            // (we capped parallelism above).
+            fetchMissingTiles();
+          })
+          .catch((err) => {
+            railTileInFlight.delete(key);
+            if ((err as Error).name === "AbortError") return;
+            const msg = (err as Error).message ?? "";
+            if (!msg.includes("429")) console.warn("[rail-network]", err);
+            // Retry-on-pan; do not poison cache.
+          });
       }
     };
 
-    const debouncedFetch = () => {
-      if (timer != null) window.clearTimeout(timer);
-      timer = window.setTimeout(fetchAndSet, 500);
+    const onMoveEnd = () => {
+      // Render immediately from whatever's cached; missing tiles fetch
+      // asynchronously in the background and re-render on completion.
+      renderFromCache();
+      fetchMissingTiles();
     };
 
     const apply = () => {
       ensureRailLinesLayer(map, railwayOpacity);
       ensureRailStationsLayer(map);
-      fetchAndSet();
+      renderFromCache();
+      fetchMissingTiles();
     };
 
     const onClick = (e: maplibregl.MapMouseEvent) => {
@@ -1185,17 +1285,16 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     if (map.isStyleLoaded()) apply();
     else map.once("style.load", apply);
     map.on("style.load", apply);
-    map.on("moveend", debouncedFetch);
+    map.on("moveend", onMoveEnd);
     map.on("click", RAIL_STATIONS_HIT_LAYER_ID, onClick);
     map.on("mouseenter", RAIL_STATIONS_HIT_LAYER_ID, onEnter);
     map.on("mouseleave", RAIL_STATIONS_HIT_LAYER_ID, onLeave);
 
     return () => {
       cancelled = true;
-      ctrl?.abort();
-      if (timer != null) window.clearTimeout(timer);
+      if (renderRaf) cancelAnimationFrame(renderRaf);
       map.off("style.load", apply);
-      map.off("moveend", debouncedFetch);
+      map.off("moveend", onMoveEnd);
       map.off("click", RAIL_STATIONS_HIT_LAYER_ID, onClick);
       map.off("mouseenter", RAIL_STATIONS_HIT_LAYER_ID, onEnter);
       map.off("mouseleave", RAIL_STATIONS_HIT_LAYER_ID, onLeave);

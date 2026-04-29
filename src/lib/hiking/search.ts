@@ -40,18 +40,30 @@ function dedupe(candidates: RouteCandidate[]): RouteCandidate[] {
 function scenicScore(c: RouteCandidate, baselineKm: number): number {
   const green = c.greenRatio ?? 0;
   const ratio = baselineKm > 0 ? c.distanceKm / baselineKm : 1;
-  // 1.0 at ratio≤1, 0.7 at 1.5×, 0.4 at 2×, ~0 beyond 3×
   const detourFactor = Math.max(0, 1 - Math.max(0, ratio - 1) * 0.6);
   return green * 0.85 + detourFactor * 0.15;
 }
 
+function rankCandidates(unique: RouteCandidate[]): RouteCandidate[] {
+  if (unique.length === 0) return unique;
+  const baselineKm = Math.min(...unique.map((c) => c.distanceKm));
+  return [...unique].sort(
+    (a, b) => scenicScore(b, baselineKm) - scenicScore(a, baselineKm),
+  );
+}
+
 /**
- * Compute up to 3 hiking route candidates between user-defined waypoints,
- * scored and ranked for scenic value (green coverage with mild detour
- * penalty). The first candidate is the recommended route.
+ * Compute up to 3 hiking route candidates between user-defined waypoints.
+ * Returns immediately after BRouter responds — routes have null
+ * greenRatio at this point. Pass `onScored` to receive the same
+ * candidates with greenRatio populated once the green polygon Overpass
+ * query finishes (decoupled so the user sees the route line within ~1
+ * second instead of waiting on green scoring).
  */
 export async function computeHikingRoute(
-  params: ComputeParams,
+  params: ComputeParams & {
+    onScored?: (candidates: RouteCandidate[], notice?: string) => void;
+  },
 ): Promise<ComputeResult> {
   const points = buildRoutePoints(params.waypoints, params.roundTrip);
   if (!points) {
@@ -69,20 +81,28 @@ export async function computeHikingRoute(
 
   const unique = dedupe(alts);
 
-  let notice: string | undefined;
-  const bbox = routesBbox(unique);
-  if (bbox) {
-    try {
-      const polys = await fetchGreenPolygons(bbox, params.signal);
-      applyGreenRatios(unique, polys);
-    } catch (err) {
-      if ((err as Error).name === "AbortError") throw err;
-      notice = `Green scoring skipped: ${(err as Error).message}`;
+  // Phase 1: return the candidates immediately, ranked by distance only
+  // (green is null). The caller can render the line right now.
+  const initial = rankCandidates(unique).slice(0, 3);
+
+  // Phase 2: kick off green scoring in the background. When it completes
+  // we re-rank and notify via onScored.
+  if (params.onScored) {
+    const bbox = routesBbox(unique);
+    if (bbox) {
+      fetchGreenPolygons(bbox, params.signal)
+        .then((polys) => {
+          if (params.signal?.aborted) return;
+          applyGreenRatios(unique, polys);
+          const reranked = rankCandidates(unique).slice(0, 3);
+          params.onScored?.(reranked);
+        })
+        .catch((err) => {
+          if ((err as Error).name === "AbortError") return;
+          params.onScored?.(initial, `Green scoring skipped: ${(err as Error).message}`);
+        });
     }
   }
 
-  const baselineKm = Math.min(...unique.map((c) => c.distanceKm));
-  unique.sort((a, b) => scenicScore(b, baselineKm) - scenicScore(a, baselineKm));
-
-  return { candidates: unique.slice(0, 3), notice };
+  return { candidates: initial };
 }

@@ -90,8 +90,8 @@ export async function fetchBrouterRoute(params: {
 }
 
 /**
- * Fetch up to `maxAlternatives` alternatives for a single profile, iterating
- * BRouter's `alternativeidx` from 0 until BRouter reports no further variant.
+ * Fetch up to `maxAlternatives` alternatives for a single profile in
+ * parallel. ~3× faster than the previous sequential loop.
  */
 export async function fetchBrouterAlternatives(params: {
   points: LatLng[];
@@ -100,21 +100,21 @@ export async function fetchBrouterAlternatives(params: {
   signal?: AbortSignal;
 }): Promise<RouteCandidate[]> {
   const max = params.maxAlternatives ?? 3;
-  const out: RouteCandidate[] = [];
-  for (let alt = 0; alt < max; alt += 1) {
-    try {
-      const r = await fetchBrouterRoute({
-        points: params.points,
-        profile: params.profile,
-        alternativeIdx: alt,
-        signal: params.signal,
-      });
-      out.push(r);
-    } catch (err) {
+  const promises = Array.from({ length: max }, (_, alt) =>
+    fetchBrouterRoute({
+      points: params.points,
+      profile: params.profile,
+      alternativeIdx: alt,
+      signal: params.signal,
+    }).catch((err) => {
       if ((err as Error).name === "AbortError") throw err;
-      if (alt === 0) throw err;
-      break;
-    }
+      return null as RouteCandidate | null;
+    }),
+  );
+  const settled = await Promise.all(promises);
+  const out = settled.filter((r): r is RouteCandidate => r != null);
+  if (out.length === 0) {
+    throw new Error("BRouter returned no route.");
   }
   return out;
 }

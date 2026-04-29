@@ -18,7 +18,7 @@ interface Props {
   mapRef: React.MutableRefObject<MLMap | null>;
 }
 
-const ROUTE_DEBOUNCE_MS = 450;
+const ROUTE_DEBOUNCE_MS = 200;
 
 export function HikingPanel({ mapRef }: Props) {
   const waypoints = useHiking((s) => s.waypoints);
@@ -73,6 +73,14 @@ export function HikingPanel({ mapRef }: Props) {
           roundTrip,
           profile,
           signal: ctrl.signal,
+          // Phase 2: green scoring resolves async; re-render candidates
+          // (now with greenRatio) and re-rank. The user already saw the
+          // unscored line within ~1 s.
+          onScored: (scored, scoreNotice) => {
+            if (ctrl.signal.aborted) return;
+            setCandidates(scored);
+            if (scoreNotice) setNotice(scoreNotice);
+          },
         });
         if (ctrl.signal.aborted) return;
         setCandidates(result.candidates);
