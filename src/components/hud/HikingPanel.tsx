@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Map as MLMap } from "maplibre-gl";
 import { HudPanel } from "./HudPanel";
 import { useHiking } from "@/lib/hiking/store";
@@ -581,7 +582,14 @@ function SearchAdd({
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [anchor, setAnchor] = useState<{
+    left: number;
+    top: number;
+    width: number;
+  } | null>(null);
   const ctrlRef = useRef<AbortController | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const text = q.trim();
@@ -613,9 +621,48 @@ function SearchAdd({
     };
   }, [q]);
 
+  // Track input position so the portal-rendered dropdown stays anchored.
+  useEffect(() => {
+    if (!open) return;
+    const update = () => {
+      const el = inputRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setAnchor({ left: r.left, top: r.bottom + 4, width: r.width });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
+
+  // Close on outside click / touch.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (wrapRef.current?.contains(target)) return;
+      // The dropdown lives in a portal — check by data-attribute.
+      const inDropdown = (target as HTMLElement).closest?.(
+        "[data-search-dropdown=\"true\"]",
+      );
+      if (inDropdown) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [open]);
+
   return (
-    <div className="relative min-w-0 flex-1">
+    <div ref={wrapRef} className="relative min-w-0 flex-1">
       <input
+        ref={inputRef}
         type="search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
@@ -623,30 +670,41 @@ function SearchAdd({
         placeholder="Search a place…"
         className="hud-search w-full px-2 py-1 text-[11px]"
       />
-      {open && results.length > 0 && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-y-auto rounded-sm border border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] shadow-lg">
-          {results.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => {
-                onPick(r);
-                setQ("");
-                setResults([]);
-                setOpen(false);
-              }}
-              className="flex w-full items-start gap-1 border-b border-[color:var(--hud-border)] px-2 py-1.5 text-left text-[11px] text-[color:var(--hud-text)] last:border-b-0 hover:bg-[var(--hud-accent-soft)] hover:text-[color:var(--hud-accent)]"
-            >
-              <span className="truncate">{r.label || r.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
       {busy && (
         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[color:var(--hud-text-muted)]">
           …
         </span>
       )}
+      {open && results.length > 0 && anchor && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              data-search-dropdown="true"
+              className="hud-scrollbar fixed z-[1000] max-h-64 overflow-y-auto rounded-sm border border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] shadow-lg backdrop-blur"
+              style={{
+                left: anchor.left,
+                top: anchor.top,
+                width: anchor.width,
+              }}
+            >
+              {results.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => {
+                    onPick(r);
+                    setQ("");
+                    setResults([]);
+                    setOpen(false);
+                  }}
+                  className="flex w-full items-start gap-1 border-b border-[color:var(--hud-border)] px-2 py-1.5 text-left text-[11px] text-[color:var(--hud-text)] last:border-b-0 hover:bg-[var(--hud-accent-soft)] hover:text-[color:var(--hud-accent)]"
+                >
+                  <span className="truncate">{r.label || r.name}</span>
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
