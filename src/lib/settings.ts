@@ -20,6 +20,11 @@ export interface Settings {
   basemapMode: BasemapMode;
   /** Per-basemap-id variant selection (e.g. Sentinel-2 year). */
   basemapVariants: Record<string, string>;
+  /**
+   * For the gibs-today basemap: 0 = yesterday UTC (default), 1..14 =
+   * N days before yesterday. Driven by the Timeline "Live" tab.
+   */
+  liveBasemapDayOffset: number;
   projection: Projection;
   activeOverlay: OverlayKind | null;
   weatherOpacity: number;
@@ -31,6 +36,7 @@ export interface Settings {
   setVectorBasemapId: (id: string) => void;
   setBasemapMode: (mode: BasemapMode) => void;
   setBasemapVariant: (basemapId: string, variantId: string) => void;
+  setLiveBasemapDayOffset: (offset: number) => void;
   setProjection: (p: Projection) => void;
   setActiveOverlay: (kind: OverlayKind | null) => void;
   setWeatherOpacity: (o: number) => void;
@@ -47,6 +53,7 @@ export const useSettings = create<Settings>()(
       vectorBasemapId: DEFAULT_VECTOR_BASEMAP_ID,
       basemapMode: "photo",
       basemapVariants: {},
+      liveBasemapDayOffset: 0,
       projection: "mercator",
       activeOverlay: null,
       weatherOpacity: 0.8,
@@ -61,6 +68,8 @@ export const useSettings = create<Settings>()(
         set((s) => ({
           basemapVariants: { ...s.basemapVariants, [basemapId]: variantId },
         })),
+      setLiveBasemapDayOffset: (offset) =>
+        set({ liveBasemapDayOffset: Math.max(0, Math.min(14, Math.round(offset))) }),
       setProjection: (p) => set({ projection: p }),
       setActiveOverlay: (kind) => set({ activeOverlay: kind }),
       setWeatherOpacity: (o) => set({ weatherOpacity: o }),
@@ -71,13 +80,14 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 10,
+      version: 11,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
         vectorBasemapId: state.vectorBasemapId,
         basemapMode: state.basemapMode,
         basemapVariants: state.basemapVariants,
+        liveBasemapDayOffset: state.liveBasemapDayOffset,
         projection: state.projection,
         activeOverlay: state.activeOverlay,
         weatherOpacity: state.weatherOpacity,
@@ -93,6 +103,16 @@ export const useSettings = create<Settings>()(
         // primary mode again; users who liked tiles can switch manually.
         if (version < 10 && p.railStyle === "tiles") {
           p.railStyle = "lines";
+        }
+        // v10 → v11: the old "clouds" overlay was a 7-day VIIRS browser
+        // (now lives in Timeline · Live). The new "clouds" is RainViewer
+        // satellite radar — visually different. Reset so the user opts
+        // in to the new visual deliberately.
+        if (version < 11) {
+          if (p.activeOverlay === "clouds") p.activeOverlay = null;
+          if (typeof p.liveBasemapDayOffset !== "number") {
+            p.liveBasemapDayOffset = 0;
+          }
         }
         delete p.weatherMode;
         // Collapse the old per-overlay on-booleans into a single `activeOverlay`.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import maplibregl, { Map as MLMap, ScaleControl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
@@ -23,8 +23,12 @@ import {
   gibsDateNDaysAgo,
   gibsTileUrl,
   gibsYesterday,
-  type GibsLayer,
 } from "@/lib/gibs";
+import {
+  fetchWeatherMaps,
+  satelliteTileUrl,
+  type RadarFrame,
+} from "@/lib/weather";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { fetchRailNetwork } from "@/lib/hiking/overpass";
 import {
@@ -42,12 +46,13 @@ import { HikingToggle } from "./HikingToggle";
 import { HikingPanel } from "./hud/HikingPanel";
 import { useHikingLayers } from "./hiking/useHikingLayers";
 
-const CLOUDS_DAYS_BACK = 7;
-const CLOUDS_ANIM_INTERVAL_MS = 900;
-const CLOUDS_COMPOSITE_LAYERS: GibsLayer[] = [
-  // VIIRS NOAA-20 — primary daily true-color since SNPP went offline March 2026.
-  "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
-];
+// Live cloud radar (RainViewer satellite IR). Frames are 10-min apart;
+// the playback interval below is just visual cadence on the slider.
+const CLOUDS_ANIM_INTERVAL_MS = 500;
+const CLOUDS_REFRESH_MS = 5 * 60 * 1000;
+const CLOUDS_TILE_SIZE_FAST = 256;
+const CLOUDS_TILE_SIZE_SHARP = 512;
+const CLOUDS_SHARPEN_DELAY_MS = 1500;
 
 const OVERLAY_SOURCE_ID = "timeline-overlay";
 const OVERLAY_LAYER_ID = "timeline-overlay-layer";
@@ -94,7 +99,7 @@ interface Props {
   onOpenSettings?: () => void;
 }
 
-function rasterStyle(basemap: Basemap, variantId?: string) {
+function rasterStyle(basemap: Basemap, variantId?: string, dayOffset?: number) {
   return {
     version: 8 as const,
     // Glyphs are required for any symbol layer with `text-field` (station
@@ -105,7 +110,7 @@ function rasterStyle(basemap: Basemap, variantId?: string) {
     sources: {
       base: {
         type: "raster" as const,
-        tiles: [resolveBasemapUrl(basemap, variantId)],
+        tiles: [resolveBasemapUrl(basemap, variantId, dayOffset)],
         tileSize: basemap.tileSize ?? 256,
         attribution: basemap.attribution,
         maxzoom: basemap.maxzoom ?? 18,
@@ -115,9 +120,14 @@ function rasterStyle(basemap: Basemap, variantId?: string) {
   };
 }
 
-function applyBasemap(map: MLMap, basemap: Basemap, variantId?: string) {
+function applyBasemap(
+  map: MLMap,
+  basemap: Basemap,
+  variantId?: string,
+  dayOffset?: number,
+) {
   if (basemap.kind === "raster") {
-    map.setStyle(rasterStyle(basemap, variantId));
+    map.setStyle(rasterStyle(basemap, variantId, dayOffset));
   } else {
     map.setStyle(basemap.url);
   }
@@ -165,24 +175,28 @@ function removeHybridOverlay(map: MLMap) {
   if (map.getSource(HYBRID_TRANSPORT_SOURCE_ID)) map.removeSource(HYBRID_TRANSPORT_SOURCE_ID);
 }
 
-const WEATHER_MAXZOOM = 7;
+const WEATHER_MAXZOOM = 9;
 
-function ensureWeatherLayer(map: MLMap, urls: string[], opacity: number) {
+function ensureWeatherLayer(
+  map: MLMap,
+  urls: string[],
+  opacity: number,
+  tileSize: number,
+) {
   if (map.getLayer(WEATHER_LAYER_ID)) return;
   if (map.getSource(WEATHER_SOURCE_ID)) map.removeSource(WEATHER_SOURCE_ID);
   map.addSource(WEATHER_SOURCE_ID, {
     type: "raster",
     tiles: urls,
-    tileSize: 256,
+    tileSize,
     maxzoom: WEATHER_MAXZOOM,
     attribution:
-      '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a>',
+      '<a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a> · satellite IR · 10-min',
   });
   map.addLayer({
     id: WEATHER_LAYER_ID,
     type: "raster",
     source: WEATHER_SOURCE_ID,
-    maxzoom: 8,
     paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
   });
 }
@@ -761,6 +775,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     vectorBasemapId,
     basemapMode,
     basemapVariants,
+    liveBasemapDayOffset,
     projection,
     activeOverlay,
     weatherOpacity,
@@ -772,6 +787,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     setVectorBasemapId,
     setBasemapMode,
     setBasemapVariant,
+    setLiveBasemapDayOffset,
     setProjection,
     setActiveOverlay,
     setWeatherOpacity,
@@ -797,7 +813,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
   const [overlayOpacity, setOverlayOpacity] = useState(1);
   const [timelineState, setTimelineState] = useState<TimelineState>({ kind: "idle" });
-  const [weatherFrameIndex, setWeatherFrameIndex] = useState(CLOUDS_DAYS_BACK - 1);
+  const [weatherFrameIndex, setWeatherFrameIndex] = useState(0);
   const [weatherPlaying, setWeatherPlaying] = useState(false);
   const [weatherLoading, setWeatherLoading] = useState(false);
   type SidebarPane = "control" | "hiking";
@@ -842,7 +858,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       container: containerRef.current,
       style:
         initial.kind === "raster"
-          ? rasterStyle(initial, initialVariantId)
+          ? rasterStyle(initial, initialVariantId, liveBasemapDayOffset)
           : initial.url,
       center: view.center,
       zoom: view.zoom,
@@ -945,7 +961,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     if (!map) return;
     const basemap = BASEMAPS.find((b) => b.id === active);
     if (!basemap) return;
-    applyBasemap(map, basemap, activeVariantId);
+    applyBasemap(map, basemap, activeVariantId, liveBasemapDayOffset);
 
     const reapply = () => {
       map.setProjection({ type: projection });
@@ -959,7 +975,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       map.once("load", reapply);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, activeVariantId]);
+  }, [active, activeVariantId, liveBasemapDayOffset]);
 
   // Toggle the hybrid labels overlay when only the mode changes (no style swap).
   useEffect(() => {
@@ -1128,6 +1144,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     if (!weatherOn) {
       const map = mapRef.current;
       if (map) removeWeatherLayer(map);
+      appliedWeatherTileSizeRef.current = null;
       setWeatherLoading(false);
     }
   }, [weatherOn]);
@@ -1149,24 +1166,90 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     };
   }, [weatherOn]);
 
+  // RainViewer manifest (5-min memo'd in lib/weather.ts).
+  const [weatherManifest, setWeatherManifest] = useState<{
+    host: string;
+    satelliteInfrared: RadarFrame[];
+  } | null>(null);
+  // Hybrid 256 → 512 lazyload. 256 paints first; we bump to 512 once the
+  // initial paint settles (sharper imagery loads in the background).
+  const [weatherTileSize, setWeatherTileSize] = useState<256 | 512>(
+    CLOUDS_TILE_SIZE_FAST,
+  );
+  // Last tile size actually applied to the MapLibre source. When this
+  // diverges from `weatherTileSize` we must remove + recreate the source
+  // (tileSize is fixed at source-creation time).
+  const appliedWeatherTileSizeRef = useRef<256 | 512 | null>(null);
+
+  // Fetch + auto-refresh the manifest while Clouds is on.
+  useEffect(() => {
+    if (!weatherOn) {
+      setWeatherManifest(null);
+      setWeatherTileSize(CLOUDS_TILE_SIZE_FAST);
+      return;
+    }
+    let cancelled = false;
+    const ctrl = new AbortController();
+    const load = async () => {
+      try {
+        const wm = await fetchWeatherMaps(ctrl.signal);
+        if (cancelled) return;
+        setWeatherManifest({
+          host: wm.host,
+          satelliteInfrared: wm.satelliteInfrared,
+        });
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        console.warn("[clouds]", err);
+      }
+    };
+    load();
+    const id = window.setInterval(load, CLOUDS_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      ctrl.abort();
+      window.clearInterval(id);
+    };
+  }, [weatherOn]);
+
+  // Bump tile size from 256 → 512 shortly after first paint so MapLibre
+  // refetches sharper tiles. One-shot per Clouds-on session.
+  useEffect(() => {
+    if (!weatherOn || weatherTileSize === CLOUDS_TILE_SIZE_SHARP) return;
+    const id = window.setTimeout(
+      () => setWeatherTileSize(CLOUDS_TILE_SIZE_SHARP),
+      CLOUDS_SHARPEN_DELAY_MS,
+    );
+    return () => window.clearTimeout(id);
+  }, [weatherOn, weatherTileSize]);
+
   interface WeatherFrame {
     time: number;
     date: string;
     urls: string[];
   }
 
-  const weatherFrames: WeatherFrame[] = (() => {
-    const all: WeatherFrame[] = [];
-    for (let i = CLOUDS_DAYS_BACK; i >= 1; i -= 1) {
-      const date = gibsDateNDaysAgo(i);
-      all.push({
-        time: Date.parse(date) / 1000,
-        date,
-        urls: CLOUDS_COMPOSITE_LAYERS.map((layer) => gibsTileUrl({ layer, date })),
-      });
-    }
-    return all;
-  })();
+  const weatherFrames: WeatherFrame[] = useMemo(() => {
+    if (!weatherManifest) return [];
+    return weatherManifest.satelliteInfrared.map((f) => ({
+      time: f.time,
+      date: new Date(f.time * 1000).toISOString(),
+      urls: [
+        satelliteTileUrl({
+          host: weatherManifest.host,
+          path: f.path,
+          size: weatherTileSize,
+        }),
+      ],
+    }));
+  }, [weatherManifest, weatherTileSize]);
+
+  // When fresh frames arrive (first load or 5-min refresh), snap the
+  // playhead to the most-recent frame so the user always sees "now".
+  useEffect(() => {
+    if (weatherFrames.length === 0) return;
+    setWeatherFrameIndex(weatherFrames.length - 1);
+  }, [weatherManifest, weatherFrames.length]);
 
   useEffect(() => {
     if (!weatherOn || !weatherPlaying || weatherFrames.length === 0) return;
@@ -1183,7 +1266,13 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     const map = mapRef.current;
     if (!map || !weatherOn || !currentWeatherUrls) return;
     const apply = () => {
-      ensureWeatherLayer(map, currentWeatherUrls, weatherOpacity);
+      // tileSize is baked in at source creation, so a change forces a
+      // full recreate. Same path on initial creation.
+      if (appliedWeatherTileSizeRef.current !== weatherTileSize) {
+        removeWeatherLayer(map);
+        appliedWeatherTileSizeRef.current = weatherTileSize;
+      }
+      ensureWeatherLayer(map, currentWeatherUrls, weatherOpacity, weatherTileSize);
       updateWeatherTiles(map, currentWeatherUrls);
     };
     if (map.isStyleLoaded()) {
@@ -1196,7 +1285,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       map.off("style.load", apply);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weatherOn, active, weatherUrlsKey]);
+  }, [weatherOn, active, weatherUrlsKey, weatherTileSize]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1786,6 +1875,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                   vectorId={vectorBasemapId}
                   mode={basemapMode}
                   variants={basemapVariants}
+                  liveBasemapDayOffset={liveBasemapDayOffset}
                   onSelectImage={(id) => {
                     setImageBasemapId(id);
                     if (basemapMode === "vector") setBasemapMode("photo");
@@ -1794,7 +1884,6 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                     setVectorBasemapId(id);
                     if (basemapMode !== "vector") setBasemapMode("vector");
                   }}
-                  onSelectVariant={setBasemapVariant}
                 />
 
                 <OverlayPanel
@@ -1816,6 +1905,32 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                 />
 
                 <TimelinePanel
+                  s2ActiveVariant={
+                    basemapVariants["s2cloudless"] ?? "2024"
+                  }
+                  isS2Active={
+                    imageBasemapId === "s2cloudless"
+                    && basemapMode !== "vector"
+                  }
+                  onSelectYear={(variantId) => {
+                    setImageBasemapId("s2cloudless");
+                    if (basemapMode === "vector") setBasemapMode("photo");
+                    setBasemapVariant("s2cloudless", variantId);
+                  }}
+                  liveDayOffset={liveBasemapDayOffset}
+                  onLiveDayOffsetChange={(offset) => {
+                    setImageBasemapId("gibs-today");
+                    if (basemapMode === "vector") setBasemapMode("photo");
+                    setLiveBasemapDayOffset(offset);
+                  }}
+                  isLiveActive={
+                    imageBasemapId === "gibs-today"
+                    && basemapMode !== "vector"
+                  }
+                  onActivateLive={() => {
+                    setImageBasemapId("gibs-today");
+                    if (basemapMode === "vector") setBasemapMode("photo");
+                  }}
                   credentials={credentials !== null}
                   zoomOk={view.zoom >= MIN_FETCH_ZOOM}
                   minZoom={MIN_FETCH_ZOOM}
@@ -1850,9 +1965,9 @@ interface BasemapPanelProps {
   vectorId: string;
   mode: BasemapMode;
   variants: Record<string, string>;
+  liveBasemapDayOffset: number;
   onSelectImage: (id: string) => void;
   onSelectVector: (id: string) => void;
-  onSelectVariant: (basemapId: string, variantId: string) => void;
 }
 
 function BasemapPanel({
@@ -1860,9 +1975,9 @@ function BasemapPanel({
   vectorId,
   mode,
   variants,
+  liveBasemapDayOffset,
   onSelectImage,
   onSelectVector,
-  onSelectVariant,
 }: BasemapPanelProps) {
   const imageMaps = BASEMAPS.filter((b) => b.category === "photo");
   const vectorMaps = BASEMAPS.filter((b) => b.category === "vector");
@@ -1896,34 +2011,28 @@ function BasemapPanel({
           {items.map((b) => {
             const selected = effectiveId === b.id;
             const variant = getActiveVariant(b, variants[b.id]);
-            const subtitle = resolveBasemapSubtitle(b, variants[b.id]);
+            const subtitle = resolveBasemapSubtitle(
+              b,
+              variants[b.id],
+              b.id === "gibs-today" ? liveBasemapDayOffset : undefined,
+            );
             return (
-              <div key={b.id} className="flex flex-col">
-                <button
-                  type="button"
-                  onClick={() => onSelect(b.id)}
-                  data-active={selected}
-                  data-live={selected && isLive}
-                  className="hud-basemap-btn flex flex-col items-stretch"
-                  aria-pressed={selected}
-                >
-                  <span className="leading-tight">
-                    {variant ? `${b.label} · ${variant.label}` : b.label}
-                  </span>
-                  {subtitle && (
-                    <span className="hud-basemap-btn-subtitle">
-                      {subtitle}
-                    </span>
-                  )}
-                </button>
-                {selected && b.variants && (
-                  <VariantChips
-                    basemap={b}
-                    selectedId={variant?.id ?? b.variants.defaultId}
-                    onSelect={(vid) => onSelectVariant(b.id, vid)}
-                  />
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => onSelect(b.id)}
+                data-active={selected}
+                data-live={selected && isLive}
+                className="hud-basemap-btn flex flex-col items-stretch"
+                aria-pressed={selected}
+              >
+                <span className="leading-tight">
+                  {variant ? `${b.label} · ${variant.label}` : b.label}
+                </span>
+                {subtitle && (
+                  <span className="hud-basemap-btn-subtitle">{subtitle}</span>
                 )}
-              </div>
+              </button>
             );
           })}
         </div>
@@ -2140,7 +2249,7 @@ function OverlayPanel({
 
   const caption =
     active === "clouds"
-      ? "NASA GIBS · VIIRS NOAA-20 true-color · daily"
+      ? "Live cloud cover · past 2 h + nowcast"
       : active === "rail"
         ? railStyle === "lines"
           ? railLineCaption
@@ -2236,11 +2345,14 @@ function OverlayPanel({
             </div>
             <div className="flex items-center justify-between text-[10px]">
               <span className="text-[color:var(--hud-text-muted)]">
-                {new Date(currentFrame.time * 1000).toLocaleDateString([], {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                })}
+                {(() => {
+                  const ms = currentFrame.time * 1000;
+                  const t = new Date(ms).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                  return ms > Date.now() ? `${t} +nowcast` : t;
+                })()}
               </span>
               <span className="text-[color:var(--hud-text-muted)]">
                 {f.frameIndex + 1}/{f.frames.length}
@@ -2294,7 +2406,19 @@ function OverlayPanel({
   );
 }
 
+type TimelineTab = "year" | "live" | "snapshots";
+
 interface TimelinePanelProps {
+  // Year tab
+  s2ActiveVariant: string;
+  isS2Active: boolean;
+  onSelectYear: (variantId: string) => void;
+  // Live tab
+  liveDayOffset: number;
+  onLiveDayOffsetChange: (offset: number) => void;
+  isLiveActive: boolean;
+  onActivateLive: () => void;
+  // Snapshots tab
   credentials: boolean;
   zoomOk: boolean;
   minZoom: number;
@@ -2309,7 +2433,195 @@ interface TimelinePanelProps {
   onOpacityChange: (o: number) => void;
 }
 
-function TimelinePanel({
+function TimelinePanel(props: TimelinePanelProps) {
+  // Smart default: Snapshots when credentials present, else Year so the
+  // user has something useful immediately without auth.
+  const [tab, setTab] = useState<TimelineTab>(() =>
+    props.credentials ? "snapshots" : "year",
+  );
+
+  return (
+    <HudPanel label="Timeline">
+      <div className="flex flex-col items-stretch gap-2">
+        <div className="hud-tab-row" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+          <button
+            type="button"
+            className="hud-tab"
+            data-active={tab === "year"}
+            onClick={() => setTab("year")}
+          >
+            Year
+          </button>
+          <button
+            type="button"
+            className="hud-tab"
+            data-active={tab === "live"}
+            onClick={() => setTab("live")}
+          >
+            Live
+          </button>
+          <button
+            type="button"
+            className="hud-tab"
+            data-active={tab === "snapshots"}
+            onClick={() => setTab("snapshots")}
+          >
+            Snapshots
+          </button>
+        </div>
+
+        {tab === "year" && (
+          <TimelineYearTab
+            s2ActiveVariant={props.s2ActiveVariant}
+            isS2Active={props.isS2Active}
+            onSelectYear={props.onSelectYear}
+          />
+        )}
+        {tab === "live" && (
+          <TimelineLiveTab
+            offset={props.liveDayOffset}
+            onChange={props.onLiveDayOffsetChange}
+            isActive={props.isLiveActive}
+            onActivate={props.onActivateLive}
+          />
+        )}
+        {tab === "snapshots" && (
+          <TimelineSnapshotsTab
+            credentials={props.credentials}
+            zoomOk={props.zoomOk}
+            minZoom={props.minZoom}
+            state={props.state}
+            sector={props.sector}
+            snapshots={props.snapshots}
+            snapshotIndex={props.snapshotIndex}
+            onStart={props.onStart}
+            onSelect={props.onSelect}
+            onClear={props.onClear}
+            opacity={props.opacity}
+            onOpacityChange={props.onOpacityChange}
+          />
+        )}
+      </div>
+    </HudPanel>
+  );
+}
+
+function TimelineYearTab({
+  s2ActiveVariant,
+  isS2Active,
+  onSelectYear,
+}: {
+  s2ActiveVariant: string;
+  isS2Active: boolean;
+  onSelectYear: (variantId: string) => void;
+}) {
+  const s2 = BASEMAPS.find((b) => b.id === "s2cloudless");
+  if (!s2 || !s2.variants) return null;
+  // When S2 isn't the active photo basemap, the chip-row's "active" dot
+  // is meaningless; pass an empty selectedId so nothing is highlighted.
+  const selectedId = isS2Active ? s2ActiveVariant : "";
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-[10px] text-[color:var(--hud-text-muted)]">
+        Sentinel-2 cloudless · 10 m · annual mosaic
+      </p>
+      <VariantChips basemap={s2} selectedId={selectedId} onSelect={onSelectYear} />
+      {!isS2Active && (
+        <p className="text-[10px] text-[color:var(--hud-text-muted)]">
+          Tap a year to switch the photo basemap to Sentinel-2.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function TimelineLiveTab({
+  offset,
+  onChange,
+  isActive,
+  onActivate,
+}: {
+  offset: number;
+  onChange: (offset: number) => void;
+  isActive: boolean;
+  onActivate: () => void;
+}) {
+  const [playing, setPlaying] = useState(false);
+  const max = 14;
+  useEffect(() => {
+    if (!playing) return;
+    const id = window.setInterval(() => {
+      onChange((offset + 1) % (max + 1));
+    }, 600);
+    return () => window.clearInterval(id);
+  }, [playing, offset, onChange]);
+  // Render the date label corresponding to the current offset.
+  const labelDate = (() => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (offset + 1));
+    return d.toISOString().slice(0, 10);
+  })();
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-[10px] text-[color:var(--hud-text-muted)]">
+        NOAA-20 VIIRS daily true-color · step through the past 14 days
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (!isActive) onActivate();
+            setPlaying((p) => !p);
+          }}
+          className="hud-btn-ghost"
+          aria-label={playing ? "Pause" : "Play"}
+        >
+          {playing ? (
+            <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor">
+              <rect x="1.5" y="1" width="2" height="8" />
+              <rect x="6.5" y="1" width="2" height="8" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor">
+              <path d="M2 1 L9 5 L2 9 Z" />
+            </svg>
+          )}
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={max}
+          step={1}
+          value={offset}
+          onChange={(e) => {
+            if (!isActive) onActivate();
+            setPlaying(false);
+            onChange(Number(e.target.value));
+          }}
+          className="hud-slider flex-1"
+          style={{ ["--hud-fill" as string]: `${Math.round((offset / max) * 100)}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between text-[10px] text-[color:var(--hud-text-muted)]">
+        <span className="hud-mono">{labelDate}</span>
+        <span>
+          {offset === 0 ? "yesterday" : `${offset + 1} days ago`}
+        </span>
+      </div>
+      {!isActive && (
+        <button
+          type="button"
+          onClick={onActivate}
+          className="hud-btn-primary"
+        >
+          Switch basemap to Live · Today
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TimelineSnapshotsTab({
   credentials,
   zoomOk,
   minZoom,
@@ -2322,21 +2634,30 @@ function TimelinePanel({
   onClear,
   opacity,
   onOpacityChange,
-}: TimelinePanelProps) {
+}: {
+  credentials: boolean;
+  zoomOk: boolean;
+  minZoom: number;
+  state: TimelineState;
+  sector: Bbox | null;
+  snapshots: Snapshot[];
+  snapshotIndex: number;
+  onStart: () => void;
+  onSelect: (index: number) => void;
+  onClear: () => void;
+  opacity: number;
+  onOpacityChange: (o: number) => void;
+}) {
   const active = sector !== null && snapshots.length > 0;
   const current = snapshotIndex >= 0 ? snapshots[snapshotIndex] : null;
-
   function handlePrev() {
     if (snapshotIndex > 0) onSelect(snapshotIndex - 1);
   }
-
   function handleNext() {
     if (snapshotIndex < snapshots.length - 1) onSelect(snapshotIndex + 1);
   }
-
   return (
-    <HudPanel label="Timeline">
-      <div className="flex flex-col items-stretch gap-2">
+    <div className="flex flex-col items-stretch gap-2">
       <div className="flex items-center justify-between">
         {state.kind === "searching" || state.kind === "loading" ? (
           <span
@@ -2364,7 +2685,7 @@ function TimelinePanel({
           disabled={!credentials || !zoomOk || state.kind === "searching"}
           className="hud-btn-primary"
         >
-          {state.kind === "searching" ? "Searching…" : "Start for this view"}
+          {state.kind === "searching" ? "Searching…" : "Scan for Snapshots"}
         </button>
       )}
 
@@ -2447,8 +2768,7 @@ function TimelinePanel({
           </div>
         </>
       )}
-      </div>
-    </HudPanel>
+    </div>
   );
 }
 

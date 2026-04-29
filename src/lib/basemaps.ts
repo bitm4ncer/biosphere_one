@@ -1,4 +1,4 @@
-import { gibsYesterday } from "./gibs";
+import { gibsDateNDaysAgo, gibsYesterday } from "./gibs";
 
 export type BasemapCategory = "photo" | "vector";
 
@@ -178,12 +178,26 @@ export function getActiveVariant(
 }
 
 /**
+ * Resolve __GIBS_TODAY__ placeholder. Offset 0 = yesterday UTC (the
+ * default — today is rarely fully rendered yet). Offset N = N days
+ * before yesterday, used by the Timeline "Live" tab to step backward
+ * through the past 14 days of VIIRS true-color.
+ */
+function gibsTodayDate(dayOffset?: number): string {
+  if (dayOffset && dayOffset > 0) return gibsDateNDaysAgo(dayOffset + 1);
+  return gibsYesterday();
+}
+
+/**
  * Build the final tile URL for a basemap, substituting any dynamic
  * placeholders (variants like ${year}, time-based __GIBS_TODAY__).
+ *
+ * `dayOffset` only matters for the gibs-today basemap; ignored elsewhere.
  */
 export function resolveBasemapUrl(
   basemap: Basemap,
   variantId?: string,
+  dayOffset?: number,
 ): string {
   let url = basemap.url;
   if (basemap.variants) {
@@ -193,7 +207,7 @@ export function resolveBasemapUrl(
     }
   }
   if (url.includes(GIBS_TODAY_DATE_PLACEHOLDER)) {
-    url = url.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsYesterday());
+    url = url.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsTodayDate(dayOffset));
   }
   return url;
 }
@@ -206,6 +220,7 @@ export function resolveBasemapUrl(
 export function resolveBasemapSubtitle(
   basemap: Basemap,
   variantId?: string,
+  dayOffset?: number,
 ): string | null {
   if (!basemap.subtitle) return null;
   let s = basemap.subtitle;
@@ -216,7 +231,7 @@ export function resolveBasemapSubtitle(
     }
   }
   if (s.includes(GIBS_TODAY_DATE_PLACEHOLDER)) {
-    s = s.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsYesterday());
+    s = s.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsTodayDate(dayOffset));
   }
   return s;
 }
