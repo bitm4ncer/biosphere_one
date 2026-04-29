@@ -25,7 +25,7 @@ import {
   type GibsLayer,
 } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
-import { fetchRailLines, fetchStationsInBbox } from "@/lib/hiking/overpass";
+import { fetchRailNetwork } from "@/lib/hiking/overpass";
 import { useHiking } from "@/lib/hiking/store";
 import { useLongPress } from "./hiking/useLongPress";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
@@ -91,6 +91,10 @@ interface Props {
 function rasterStyle(basemap: Basemap, variantId?: string) {
   return {
     version: 8 as const,
+    // Glyphs are required for any symbol layer with `text-field` (station
+    // names, waypoint numbers, etc.) we add on top. Raster basemaps would
+    // otherwise have no glyphs source and labels render blank.
+    glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
     sources: {
       base: {
         type: "raster" as const,
@@ -227,7 +231,7 @@ function removeRailwayLayer(map: MLMap) {
 const RAIL_LINES_SOURCE_ID = "rail-lines-src";
 const RAIL_LINES_CASING_LAYER_ID = "rail-lines-casing";
 const RAIL_LINES_MAIN_LAYER_ID = "rail-lines-main";
-const RAIL_LINES_MIN_ZOOM = 8;
+const RAIL_LINES_MIN_ZOOM = 9;
 
 function ensureRailLinesLayer(map: MLMap, opacity: number) {
   if (!map.getSource(RAIL_LINES_SOURCE_ID)) {
@@ -369,19 +373,26 @@ function ensureRailStationsLayer(map: MLMap) {
       id: RAIL_STATIONS_LABEL_LAYER_ID,
       type: "symbol",
       source: RAIL_STATIONS_SOURCE_ID,
-      minzoom: 12,
+      minzoom: 10,
       layout: {
         "text-field": ["get", "name"],
-        "text-size": 11,
+        "text-font": ["Noto Sans Regular"],
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          10, 9,
+          14, 11,
+          17, 13,
+        ],
         "text-offset": [0, 1.2],
         "text-anchor": "top",
         "text-optional": true,
         "text-allow-overlap": false,
+        "text-padding": 4,
       },
       paint: {
         "text-color": "#e8f0d9",
         "text-halo-color": "#0a0a0b",
-        "text-halo-width": 1.2,
+        "text-halo-width": 1.4,
       },
     });
   }
@@ -1087,81 +1098,15 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     updateRailwayOpacity(map, railwayOpacity);
   }, [railwayOn, railStyle, railwayOpacity]);
 
-  // Clean rail lines from Overpass (rail + railStyle === "lines")
+  // Combined Overpass effect: fetches rail lines + stations in ONE query and
+  // updates both layers. Halves the request rate and avoids the previous
+  // race where two parallel fetches both hit Overpass and tripped 429s.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const linesActive = railwayOn && railStyle === "lines";
     if (!linesActive) {
       removeRailLinesLayer(map);
-      return;
-    }
-
-    let ctrl: AbortController | null = null;
-    let timer: number | null = null;
-    let cancelled = false;
-
-    const fetchAndSet = async () => {
-      if (cancelled) return;
-      if (map.getZoom() < RAIL_LINES_MIN_ZOOM) {
-        setRailLinesData(map, { type: "FeatureCollection", features: [] });
-        return;
-      }
-      ctrl?.abort();
-      ctrl = new AbortController();
-      try {
-        const b = map.getBounds();
-        const bbox: [number, number, number, number] = [
-          b.getSouth(),
-          b.getWest(),
-          b.getNorth(),
-          b.getEast(),
-        ];
-        const fc = await fetchRailLines(bbox, ctrl.signal);
-        if (!cancelled && !ctrl.signal.aborted) setRailLinesData(map, fc);
-      } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          console.warn("[rail-lines]", err);
-        }
-      }
-    };
-
-    const debouncedFetch = () => {
-      if (timer != null) window.clearTimeout(timer);
-      timer = window.setTimeout(fetchAndSet, 400);
-    };
-
-    const apply = () => {
-      ensureRailLinesLayer(map, railwayOpacity);
-      fetchAndSet();
-    };
-    if (map.isStyleLoaded()) apply();
-    else map.once("style.load", apply);
-    map.on("style.load", apply);
-    map.on("moveend", debouncedFetch);
-
-    return () => {
-      cancelled = true;
-      ctrl?.abort();
-      if (timer != null) window.clearTimeout(timer);
-      map.off("style.load", apply);
-      map.off("moveend", debouncedFetch);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railwayOn, railStyle, active]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !railwayOn || railStyle !== "lines") return;
-    updateRailLinesOpacity(map, railwayOpacity);
-  }, [railwayOn, railStyle, railwayOpacity]);
-
-  // Stations alongside rail-lines: clickable, tap = add waypoint.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const linesActive = railwayOn && railStyle === "lines";
-    if (!linesActive) {
       removeRailStationsLayer(map);
       return;
     }
@@ -1172,7 +1117,9 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 
     const fetchAndSet = async () => {
       if (cancelled) return;
-      if (map.getZoom() < RAIL_STATIONS_MIN_ZOOM) {
+      const z = map.getZoom();
+      if (z < RAIL_LINES_MIN_ZOOM) {
+        setRailLinesData(map, { type: "FeatureCollection", features: [] });
         setRailStationsData(map, { type: "FeatureCollection", features: [] });
         return;
       }
@@ -1186,30 +1133,38 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
           b.getNorth(),
           b.getEast(),
         ];
-        const stations = await fetchStationsInBbox(bbox, ctrl.signal);
+        const { lines, stations } = await fetchRailNetwork(bbox, ctrl.signal);
         if (cancelled || ctrl.signal.aborted) return;
-        const fc: GeoJSON.FeatureCollection = {
-          type: "FeatureCollection",
-          features: stations.map((s) => ({
-            type: "Feature",
-            geometry: { type: "Point", coordinates: [s.lon, s.lat] },
-            properties: { id: s.id, name: s.name },
-          })),
-        };
-        setRailStationsData(map, fc);
-      } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          console.warn("[rail-stations]", err);
+        setRailLinesData(map, lines);
+        // Stations only at higher zoom to keep the dot density readable.
+        if (z >= RAIL_STATIONS_MIN_ZOOM) {
+          setRailStationsData(map, {
+            type: "FeatureCollection",
+            features: stations.map((s) => ({
+              type: "Feature",
+              geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+              properties: { id: s.id, name: s.name },
+            })),
+          });
+        } else {
+          setRailStationsData(map, { type: "FeatureCollection", features: [] });
         }
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        const msg = (err as Error).message ?? "";
+        // 429s from Overpass are expected at low zoom / high pan rate; do
+        // not spam the console with them.
+        if (!msg.includes("429")) console.warn("[rail-network]", err);
       }
     };
 
     const debouncedFetch = () => {
       if (timer != null) window.clearTimeout(timer);
-      timer = window.setTimeout(fetchAndSet, 400);
+      timer = window.setTimeout(fetchAndSet, 700);
     };
 
     const apply = () => {
+      ensureRailLinesLayer(map, railwayOpacity);
       ensureRailStationsLayer(map);
       fetchAndSet();
     };
@@ -1258,6 +1213,12 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [railwayOn, railStyle, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !railwayOn || railStyle !== "lines") return;
+    updateRailLinesOpacity(map, railwayOpacity);
+  }, [railwayOn, railStyle, railwayOpacity]);
 
   useEffect(() => {
     if (!firesOn) {

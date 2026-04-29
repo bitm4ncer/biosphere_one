@@ -57,33 +57,60 @@ async function overpass(
 }
 
 /**
- * Fetch railway station + halt nodes within a bounding box.
+ * Combined fetch: rail lines + railway stations + halts in the bbox in
+ * a single Overpass call. Returns both as separate result sets. Halves
+ * the request rate compared to two sequential queries.
+ *
  * bbox = [south, west, north, east] (Overpass order).
  */
-export async function fetchStationsInBbox(
+export async function fetchRailNetwork(
   bbox: [number, number, number, number],
   signal?: AbortSignal,
-): Promise<Station[]> {
+): Promise<{
+  lines: GeoJSON.FeatureCollection<GeoJSON.LineString>;
+  stations: Station[];
+}> {
   const [s, w, n, e] = bbox;
   const q = `
     [out:json][timeout:25];
     (
+      way[railway~"^(rail|light_rail|narrow_gauge|subway|tram|monorail)$"][service!~"."](${s},${w},${n},${e});
+      way[railway~"^(rail|light_rail|narrow_gauge|subway|tram|monorail)$"][service=siding](${s},${w},${n},${e});
       node[railway=station](${s},${w},${n},${e});
       node[railway=halt](${s},${w},${n},${e});
     );
-    out body;
+    out geom;
   `;
-  return parseStationsResponse(await overpass(q, signal));
-}
-
-function parseStationsResponse(data: OverpassResponse): Station[] {
-  const out: Station[] = [];
+  const data = await overpass(q, signal);
+  const lineFeatures: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+  const stationNodes: OverpassNode[] = [];
   for (const el of data.elements) {
-    if (el.type !== "node") continue;
+    if (el.type === "node") {
+      stationNodes.push(el);
+      continue;
+    }
+    if (el.type !== "way" || !el.geometry || el.geometry.length < 2) continue;
+    const tags = el.tags ?? {};
+    lineFeatures.push({
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: el.geometry.map((g) => [g.lon, g.lat]),
+      },
+      properties: {
+        id: el.id,
+        kind: tags.railway ?? "rail",
+        service: tags.service,
+        tunnel: tags.tunnel === "yes",
+      },
+    });
+  }
+  const stations: Station[] = [];
+  for (const el of stationNodes) {
     const tags = el.tags ?? {};
     const name = tags.name ?? tags["name:de"] ?? tags["name:en"] ?? tags.ref ?? "";
     if (!name) continue;
-    out.push({
+    stations.push({
       id: `node/${el.id}`,
       name,
       lat: el.lat,
@@ -93,59 +120,18 @@ function parseStationsResponse(data: OverpassResponse): Station[] {
       tags,
     });
   }
-  // dedupe by coarse location (same stop may be mapped twice)
+  // dedupe stations by coarse location + name
   const seen = new Map<string, Station>();
-  for (const s of out) {
-    const key = `${s.lat.toFixed(4)},${s.lon.toFixed(4)},${s.name}`;
-    if (!seen.has(key)) seen.set(key, s);
+  for (const st of stations) {
+    const key = `${st.lat.toFixed(4)},${st.lon.toFixed(4)},${st.name}`;
+    if (!seen.has(key)) seen.set(key, st);
   }
-  return Array.from(seen.values());
+  return {
+    lines: { type: "FeatureCollection", features: lineFeatures },
+    stations: Array.from(seen.values()),
+  };
 }
 
-/**
- * Fetch rail way geometries within a bounding box as a GeoJSON
- * FeatureCollection. Each feature carries a `kind` property so the
- * caller can style light_rail, tram, subway etc. differently.
- *
- * bbox = [south, west, north, east] (Overpass order).
- */
-export async function fetchRailLines(
-  bbox: [number, number, number, number],
-  signal?: AbortSignal,
-): Promise<GeoJSON.FeatureCollection<GeoJSON.LineString>> {
-  const [s, w, n, e] = bbox;
-  const q = `
-    [out:json][timeout:25];
-    (
-      way[railway~"^(rail|light_rail|narrow_gauge|subway|tram|monorail)$"][service!~"."](${s},${w},${n},${e});
-      way[railway~"^(rail|light_rail|narrow_gauge|subway|tram|monorail)$"][service=siding](${s},${w},${n},${e});
-    );
-    out geom;
-  `;
-  const data = await overpass(q, signal);
-  const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
-  for (const el of data.elements) {
-    if (el.type !== "way" || !el.geometry || el.geometry.length < 2) continue;
-    const tags = el.tags ?? {};
-    const kind = tags.railway ?? "rail";
-    const service = tags.service;
-    const tunnel = tags.tunnel === "yes";
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: el.geometry.map((g) => [g.lon, g.lat]),
-      },
-      properties: {
-        id: el.id,
-        kind,
-        service,
-        tunnel,
-      },
-    });
-  }
-  return { type: "FeatureCollection", features };
-}
 
 /**
  * Fetch green/natural polygons within a bounding box.

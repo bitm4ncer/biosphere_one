@@ -198,7 +198,7 @@ export function useHikingLayers(map: MLMap | null) {
             "text-size": 11,
             "text-allow-overlap": true,
             "text-ignore-placement": true,
-            "text-font": ["Noto Sans Bold", "Open Sans Bold", "Arial Unicode MS Bold"],
+            "text-font": ["Noto Sans Bold"],
           },
           paint: {
             "text-color": "#0a0a0b",
