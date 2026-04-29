@@ -51,7 +51,10 @@ export const useSettings = create<Settings>()(
       activeOverlay: null,
       weatherOpacity: 0.8,
       railwayOpacity: 0.85,
-      railStyle: "lines",
+      // Default to pre-rendered ORM tiles. The "lines" style uses Overpass
+      // and is unreliable when public Overpass instances throttle / time
+      // out; tiles are instant and depend only on openrailwaymap.org.
+      railStyle: "tiles",
       firesOpacity: 0.9,
       ndviOpacity: 0.7,
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
@@ -71,7 +74,7 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 8,
+      version: 9,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -86,9 +89,15 @@ export const useSettings = create<Settings>()(
         firesOpacity: state.firesOpacity,
         ndviOpacity: state.ndviOpacity,
       }),
-      migrate: (persisted: unknown, _version: number) => {
+      migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v8 → v9: reset railStyle to the new "tiles" default so existing
+        // users escape the unreliable Overpass-driven lines path. They can
+        // still switch back manually if they prefer the HUD-style render.
+        if (version < 9) {
+          p.railStyle = "tiles";
+        }
         delete p.weatherMode;
         // Collapse the old per-overlay on-booleans into a single `activeOverlay`.
         if (!("activeOverlay" in p)) {
