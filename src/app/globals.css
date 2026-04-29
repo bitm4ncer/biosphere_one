@@ -90,6 +90,12 @@ body {
   display: none !important;
 }
 
+/* Recolor MapLibre's GPS accuracy circle to the HUD accent. */
+.maplibregl-user-location-accuracy-circle {
+  background-color: var(--hud-accent) !important;
+  opacity: 0.2;
+}
+
 /* ── HUD palette ─────────────────────────────────────────────────────── */
 :root {
   --hud-surface:        rgba(8, 10, 6, 0.88);
