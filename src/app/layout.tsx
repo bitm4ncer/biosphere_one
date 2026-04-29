@@ -32,6 +32,23 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
+        {/*
+          Configure coi-serviceworker BEFORE it runs. `credentialless` mode
+          tells the browser to strip credentials on cross-origin fetches
+          instead of enforcing strict require-corp, so external APIs like
+          Overpass that don't set CORP headers don't get blocked. The page
+          stays crossOriginIsolated, so SharedArrayBuffer / FFmpeg keep
+          working. Without this, Overpass POSTs failed with net::ERR_FAILED
+          and the service worker rejected with "Failed to convert value to
+          'Response'".
+        */}
+        <Script
+          id="coi-config"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: "window.coi = { coepCredentialless: () => true };",
+          }}
+        />
         <Script src={`${basePath}/coi-serviceworker.js`} strategy="beforeInteractive" />
       </head>
       <body className="min-h-full flex flex-col bg-neutral-950 text-neutral-100">
