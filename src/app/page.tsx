@@ -43,7 +43,7 @@ export default function Home() {
 
   return (
     <div className="fixed inset-0 flex flex-col">
-      <header className="relative z-50 flex items-center gap-3 border-b border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] px-4 py-2 backdrop-blur">
+      <header className="relative z-50 flex items-center gap-3 border-b border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] px-4 py-2 pt-[max(env(safe-area-inset-top,0px),0.5rem)] backdrop-blur">
         <h1 className="shrink-0 font-mono text-sm font-semibold uppercase tracking-[0.2em] text-[color:var(--hud-accent)]">
           biosphere<span className="text-[color:var(--hud-text-muted)]">_01</span>
         </h1>

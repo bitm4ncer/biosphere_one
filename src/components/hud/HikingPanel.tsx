@@ -391,9 +391,23 @@ export function HikingPanel({ mapRef }: Props) {
             clearWaypoints();
             setNotice(null);
           }}
-          className="self-end text-[10px] uppercase tracking-wider text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
+          className="hud-btn-ghost !w-auto justify-center gap-1.5 self-end px-3 text-[10px] uppercase tracking-wider"
+          aria-label="Clear all waypoints and routes"
         >
-          clear all
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M3 5 L13 5 M5 5 L5.5 13 H10.5 L11 5 M6.5 5 V3 H9.5 V5" />
+          </svg>
+          Clear all
         </button>
       )}
 
