@@ -47,16 +47,18 @@ const FIRES_SOURCE_ID = "fires";
 const FIRES_LAYER_ID = "fires-layer";
 const NDVI_SOURCE_ID = "ndvi";
 const NDVI_LAYER_ID = "ndvi-layer";
-const HYBRID_LABELS_SOURCE_ID = "hybrid-labels";
-const HYBRID_LABELS_LAYER_ID = "hybrid-labels-layer";
-const HYBRID_LABELS_TILE_URLS = [
-  "https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
-  "https://b.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
-  "https://c.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
-  "https://d.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
-];
-const HYBRID_LABELS_ATTRIB =
-  '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>';
+// Hybrid overlay: Esri reference layers (transparent roads, boundaries, labels)
+// — same setup Esri uses for its own "Imagery Hybrid" view.
+const HYBRID_TRANSPORT_SOURCE_ID = "hybrid-transport";
+const HYBRID_TRANSPORT_LAYER_ID = "hybrid-transport-layer";
+const HYBRID_TRANSPORT_TILE_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}";
+const HYBRID_REFERENCE_SOURCE_ID = "hybrid-reference";
+const HYBRID_REFERENCE_LAYER_ID = "hybrid-reference-layer";
+const HYBRID_REFERENCE_TILE_URL =
+  "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}";
+const HYBRID_OVERLAY_ATTRIB =
+  '<a href="https://www.esri.com/" target="_blank" rel="noreferrer">Esri</a> reference overlays';
 
 interface ViewState {
   center: [number, number];
@@ -100,27 +102,46 @@ function applyBasemap(map: MLMap, basemap: Basemap) {
   }
 }
 
-function addHybridLabels(map: MLMap) {
-  if (map.getLayer(HYBRID_LABELS_LAYER_ID)) return;
-  if (!map.getSource(HYBRID_LABELS_SOURCE_ID)) {
-    map.addSource(HYBRID_LABELS_SOURCE_ID, {
+function addHybridOverlay(map: MLMap) {
+  if (!map.getSource(HYBRID_TRANSPORT_SOURCE_ID)) {
+    map.addSource(HYBRID_TRANSPORT_SOURCE_ID, {
       type: "raster",
-      tiles: HYBRID_LABELS_TILE_URLS,
+      tiles: [HYBRID_TRANSPORT_TILE_URL],
       tileSize: 256,
       maxzoom: 19,
-      attribution: HYBRID_LABELS_ATTRIB,
+      attribution: HYBRID_OVERLAY_ATTRIB,
     });
   }
-  map.addLayer({
-    id: HYBRID_LABELS_LAYER_ID,
-    type: "raster",
-    source: HYBRID_LABELS_SOURCE_ID,
-  });
+  if (!map.getLayer(HYBRID_TRANSPORT_LAYER_ID)) {
+    map.addLayer({
+      id: HYBRID_TRANSPORT_LAYER_ID,
+      type: "raster",
+      source: HYBRID_TRANSPORT_SOURCE_ID,
+    });
+  }
+  if (!map.getSource(HYBRID_REFERENCE_SOURCE_ID)) {
+    map.addSource(HYBRID_REFERENCE_SOURCE_ID, {
+      type: "raster",
+      tiles: [HYBRID_REFERENCE_TILE_URL],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: HYBRID_OVERLAY_ATTRIB,
+    });
+  }
+  if (!map.getLayer(HYBRID_REFERENCE_LAYER_ID)) {
+    map.addLayer({
+      id: HYBRID_REFERENCE_LAYER_ID,
+      type: "raster",
+      source: HYBRID_REFERENCE_SOURCE_ID,
+    });
+  }
 }
 
-function removeHybridLabels(map: MLMap) {
-  if (map.getLayer(HYBRID_LABELS_LAYER_ID)) map.removeLayer(HYBRID_LABELS_LAYER_ID);
-  if (map.getSource(HYBRID_LABELS_SOURCE_ID)) map.removeSource(HYBRID_LABELS_SOURCE_ID);
+function removeHybridOverlay(map: MLMap) {
+  if (map.getLayer(HYBRID_REFERENCE_LAYER_ID)) map.removeLayer(HYBRID_REFERENCE_LAYER_ID);
+  if (map.getSource(HYBRID_REFERENCE_SOURCE_ID)) map.removeSource(HYBRID_REFERENCE_SOURCE_ID);
+  if (map.getLayer(HYBRID_TRANSPORT_LAYER_ID)) map.removeLayer(HYBRID_TRANSPORT_LAYER_ID);
+  if (map.getSource(HYBRID_TRANSPORT_SOURCE_ID)) map.removeSource(HYBRID_TRANSPORT_SOURCE_ID);
 }
 
 const WEATHER_MAXZOOM = 7;
@@ -651,7 +672,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       map.setProjection({ type: projection });
       if (sector) setSectorOutline(map, sector);
       if (overlayUrl && sector) setOverlay(map, overlayUrl, sector, overlayOpacity);
-      if (basemapMode === "hybrid") addHybridLabels(map);
+      if (basemapMode === "hybrid") addHybridOverlay(map);
     };
     if (map.isStyleLoaded()) {
       setTimeout(reapply, 0);
@@ -666,8 +687,8 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      if (basemapMode === "hybrid") addHybridLabels(map);
-      else removeHybridLabels(map);
+      if (basemapMode === "hybrid") addHybridOverlay(map);
+      else removeHybridOverlay(map);
     };
     if (map.isStyleLoaded()) apply();
     else map.once("idle", apply);
