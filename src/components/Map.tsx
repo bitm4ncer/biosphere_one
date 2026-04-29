@@ -805,6 +805,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     if (typeof window === "undefined") return "control";
     return window.matchMedia("(min-width: 768px)").matches ? "control" : null;
   });
+  const [sheetExpanded, setSheetExpanded] = useState(false);
   const sidebarOpen = activeSidebar !== null;
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
   const [geoHeading, setGeoHeading] = useState<string | null>(null);
@@ -831,6 +832,13 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 
   const toggleSidebar = (pane: SidebarPane) => {
     setActiveSidebar((current) => (current === pane ? null : pane));
+    // Always (re)open at half height on mobile; desktop ignores this state.
+    setSheetExpanded(false);
+  };
+
+  const closeSidebar = () => {
+    setActiveSidebar(null);
+    setSheetExpanded(false);
   };
 
   useEffect(() => {
@@ -1501,7 +1509,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
     if (!isMobile) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setActiveSidebar(null);
+      if (e.key === "Escape") closeSidebar();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1698,7 +1706,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 
       {/* geolocate status banner (diagnostic — bottom center, above scale) */}
       {(geoStatus || geoHeading) && (
-        <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+        <div className="pointer-events-auto absolute bottom-[calc(60px+env(safe-area-inset-bottom,0px)+12px)] md:bottom-3 left-1/2 z-10 -translate-x-1/2">
           <div className="hud-panel flex items-center gap-2 px-3 py-1.5 text-[11px] text-[color:var(--hud-text)]">
             <span className="hud-corner-tr" aria-hidden />
             <span className="hud-corner-br" aria-hidden />
@@ -1727,21 +1735,39 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-[5] md:hidden"
-          onClick={() => setActiveSidebar(null)}
+          onClick={closeSidebar}
           aria-hidden
         />
       )}
 
-      {/* Full-height sidebar with attached handles */}
+      {/* Sidebar — bottom-sheet on mobile, side-drawer on desktop */}
       <aside
-        className={`absolute right-0 top-0 bottom-0 z-10 flex w-full max-w-[340px] transition-transform duration-200 ease-out ${
+        data-sheet-state={
+          activeSidebar === null ? "closed" : sheetExpanded ? "full" : "half"
+        }
+        className={[
+          "absolute z-10 flex w-full",
+          "left-0 right-0 md:left-auto md:right-0",
+          "bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 md:top-0",
+          "md:max-w-[340px]",
+          "rounded-t-xl md:rounded-none",
+          "border-t md:border-t-0 border-[color:var(--hud-border)]",
+          "transition-[transform,height] md:transition-transform",
+          "duration-300 md:duration-200 ease-out will-change-transform",
+          activeSidebar === null
+            ? "translate-y-full md:translate-y-0"
+            : "translate-y-0",
+          sheetExpanded
+            ? "h-[calc(100%-60px-env(safe-area-inset-bottom,0px))]"
+            : "h-[50dvh]",
+          "md:h-auto",
           sidebarOpen
-            ? "translate-x-0"
-            : "translate-x-[calc(100%-34px)]"
-        }`}
+            ? "md:translate-x-0"
+            : "md:translate-x-[calc(100%-34px)]",
+        ].join(" ")}
       >
-        {/* stacked handle column (hangs on the sidebar's left edge) */}
-        <div className="flex shrink-0 flex-col items-start gap-2 pt-4">
+        {/* Side handles — desktop only */}
+        <div className="hud-side-handles flex shrink-0 flex-col items-start gap-2 pt-4">
           <SidebarToggle
             open={activeSidebar === "control"}
             onToggle={() => toggleSidebar("control")}
@@ -1754,22 +1780,78 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 
         {/* panel body */}
         <div
-          className="hud-sidebar hud-scanlines flex min-w-0 flex-1 flex-col"
+          className="hud-sidebar hud-scanlines flex min-w-0 flex-1 flex-col overflow-hidden"
           aria-hidden={!sidebarOpen}
         >
+          {/* Drag-grabber — mobile only; tap toggles half ↔ full */}
+          <button
+            type="button"
+            onClick={() => setSheetExpanded((v) => !v)}
+            aria-label={sheetExpanded ? "Collapse panel" : "Expand panel"}
+            className="hud-bottom-sheet-grabber"
+          />
+
           <div className="flex items-center justify-between border-b border-[color:var(--hud-border)] px-3 py-2">
-            <div className="flex items-center gap-2">
-              <span className="inline-block h-2 w-2 rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]" />
-              <span className="hud-label">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]" />
+              <span className="hud-label truncate">
                 {activeSidebar === "hiking" ? "Hiking" : "Control Deck"}
               </span>
             </div>
-            <span className="hud-mono text-[10px] text-[color:var(--hud-text-muted)]">
-              BIOSPHERE · v1
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="hud-mono hidden text-[10px] text-[color:var(--hud-text-muted)] md:inline">
+                BIOSPHERE · v1
+              </span>
+              {/* Expand toggle — mobile only */}
+              <button
+                type="button"
+                onClick={() => setSheetExpanded((v) => !v)}
+                aria-label={sheetExpanded ? "Collapse panel" : "Expand panel"}
+                className="hud-icon-btn md:hidden"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  {sheetExpanded ? (
+                    <path d="M4 9 L8 5 L12 9" />
+                  ) : (
+                    <path d="M4 7 L8 11 L12 7" />
+                  )}
+                </svg>
+              </button>
+              {/* Close — mobile only */}
+              <button
+                type="button"
+                onClick={closeSidebar}
+                aria-label="Close panel"
+                className="hud-icon-btn md:hidden"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
+                  <path d="M4 4 L12 12 M12 4 L4 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 pb-[max(env(safe-area-inset-bottom,0px),12px)] flex flex-col gap-3">
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-3 pb-[max(env(safe-area-inset-bottom,0px),12px)]">
             {activeSidebar === "hiking" ? (
               <HikingPanel mapRef={mapRef} />
             ) : (
@@ -1841,6 +1923,64 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
           )}
         </div>
       </aside>
+
+      {/* Bottom nav — mobile only; switches between Control Deck / Hiking */}
+      <nav className="hud-bottom-nav" aria-label="Panel switcher">
+        <button
+          type="button"
+          onClick={() => toggleSidebar("control")}
+          data-active={activeSidebar === "control"}
+          aria-pressed={activeSidebar === "control"}
+          className="hud-bottom-nav-btn"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            aria-hidden
+          >
+            <path d="M2 4H10" />
+            <circle cx="12" cy="4" r="1.6" fill="currentColor" stroke="none" />
+            <path d="M2 8H6" />
+            <circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none" />
+            <path d="M10 8H14" />
+            <path d="M2 12H10" />
+            <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+          </svg>
+          Control
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleSidebar("hiking")}
+          data-active={activeSidebar === "hiking"}
+          aria-pressed={activeSidebar === "hiking"}
+          className="hud-bottom-nav-btn"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M5 2 L5 14" />
+            <path
+              d="M5 3 L13 5 L5 7 Z"
+              fill="currentColor"
+              fillOpacity="0.45"
+            />
+          </svg>
+          Hiking
+        </button>
+      </nav>
     </div>
   );
 }

@@ -237,6 +237,191 @@ body {
   transform: translateX(12px);
 }
 
+/* ── Mobile bottom nav (panel switcher dock) ────────────────────────── */
+.hud-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 11;
+  display: none;
+  gap: 6px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--hud-surface-solid);
+  border-top: 1px solid var(--hud-border);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.hud-bottom-nav-btn {
+  flex: 1;
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hud-text);
+  background: transparent;
+  border: 1px solid var(--hud-border);
+  border-radius: 2px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.hud-bottom-nav-btn:active {
+  background: var(--hud-accent-soft);
+}
+
+.hud-bottom-nav-btn[data-active="true"] {
+  color: var(--hud-accent);
+  background: var(--hud-accent-soft);
+  border-color: var(--hud-border-strong);
+  box-shadow: inset 0 0 0 1px var(--hud-border-strong);
+  text-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+.hud-bottom-nav-btn svg {
+  flex-shrink: 0;
+}
+
+/* ── Mobile bottom sheet ─────────────────────────────────────────────── */
+.hud-bottom-sheet-grabber {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud-bottom-sheet-grabber::before {
+  content: "";
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--hud-border-strong);
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.hud-bottom-sheet-grabber:active::before {
+  opacity: 0.9;
+}
+
+/* Tiny icon button — used for sheet expand/close in the header */
+.hud-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--hud-border);
+  background: transparent;
+  color: var(--hud-text);
+  border-radius: 2px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.hud-icon-btn:hover {
+  background: var(--hud-accent-soft);
+  border-color: var(--hud-border-strong);
+  color: var(--hud-accent);
+}
+
+/* ── Responsive: phones ──────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .hud-bottom-nav { display: flex; }
+
+  /* Stick the side handle column off-screen so it doesn't sit on the map */
+  .hud-side-handles { display: none !important; }
+
+  /* Reveal the sheet's grab handle */
+  .hud-bottom-sheet-grabber { display: flex; }
+
+  /* Bigger tap targets for HUD controls */
+  .hud-btn-ghost {
+    min-width: 40px;
+    min-height: 40px;
+    width: auto;
+    padding-inline: 12px;
+  }
+
+  .hud-btn-primary {
+    min-height: 44px;
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+
+  .hud-tab {
+    min-height: 38px;
+    padding: 10px 4px;
+    font-size: 10px;
+  }
+
+  .hud-basemap-btn {
+    padding: 11px 12px;
+    font-size: 12px;
+  }
+
+  .hud-basemap-btn-subtitle {
+    font-size: 10px;
+  }
+
+  .hud-variant-chip {
+    min-height: 36px;
+    padding: 8px 14px;
+    font-size: 11px;
+  }
+
+  .hud-basemap-switch-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  /* Invisible touch padding around small toggle widgets so they meet 44px */
+  .led-toggle,
+  .hud-switch {
+    position: relative;
+  }
+  .led-toggle::after,
+  .hud-switch::after {
+    content: "";
+    position: absolute;
+    inset: -12px;
+  }
+
+  /* Search input — comfortable typing height */
+  .hud-search input,
+  .hud-search > input {
+    min-height: 40px;
+  }
+
+  /* MapLibre native controls — bump button size for touch */
+  .maplibregl-ctrl-group button {
+    width: 38px !important;
+    height: 38px !important;
+  }
+
+  /* Keep MapLibre controls clear of notch + bottom-nav */
+  .maplibregl-ctrl-top-left,
+  .maplibregl-ctrl-top-right {
+    margin-top: env(safe-area-inset-top, 0px);
+  }
+  .maplibregl-ctrl-bottom-left,
+  .maplibregl-ctrl-bottom-right {
+    margin-bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
 /* ── HUD sliders ─────────────────────────────────────────────────────── */
 input[type="range"].hud-slider {
   -webkit-appearance: none;
