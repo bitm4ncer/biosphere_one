@@ -35,11 +35,11 @@ body {
   inset: 7px;
   width: 14px;
   height: 14px;
-  background: var(--hud-accent);
-  border: 2px solid #0a0a0b;
+  background: rgba(212, 255, 56, 0.65);
+  border: 2px solid rgba(10, 10, 11, 0.55);
   border-radius: 50%;
   box-shadow:
-    0 0 0 1px var(--hud-accent),
+    0 0 0 1px rgba(212, 255, 56, 0.55),
     0 0 14px var(--hud-accent-glow);
   z-index: 2;
 }
@@ -93,7 +93,7 @@ body {
 /* Recolor MapLibre's GPS accuracy circle to the HUD accent. */
 .maplibregl-user-location-accuracy-circle {
   background-color: var(--hud-accent) !important;
-  opacity: 0.2;
+  opacity: 0.18 !important;
 }
 
 /* ── HUD palette ─────────────────────────────────────────────────────── */
