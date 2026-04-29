@@ -440,6 +440,56 @@ function isRateLimitError(err: unknown): boolean {
   );
 }
 
+/**
+ * Lightweight pub/sub so React can render a loading badge without
+ * polling. Fires whenever a tile fetch starts/finishes or the cooldown
+ * flips on/off.
+ */
+const railNetworkSubscribers = new Set<() => void>();
+function notifyRailNetworkStatus() {
+  railNetworkSubscribers.forEach((cb) => cb());
+}
+export interface RailNetworkStatus {
+  inFlight: number;
+  cooldownUntil: number;
+}
+function getRailNetworkStatus(): RailNetworkStatus {
+  return {
+    inFlight: railTileInFlight.size,
+    cooldownUntil: railRateLimitedUntil,
+  };
+}
+function subscribeRailNetwork(cb: () => void): () => void {
+  railNetworkSubscribers.add(cb);
+  return () => {
+    railNetworkSubscribers.delete(cb);
+  };
+}
+
+function useRailNetworkStatus(): RailNetworkStatus {
+  const [status, setStatus] = useState<RailNetworkStatus>(() =>
+    getRailNetworkStatus(),
+  );
+  useEffect(() => {
+    let raf = 0;
+    const update = () => {
+      setStatus(getRailNetworkStatus());
+      // While we're in a cooldown window, repaint roughly every second so
+      // the countdown text in the panel ticks down.
+      if (railRateLimitedUntil > Date.now()) {
+        raf = window.setTimeout(update, 500) as unknown as number;
+      }
+    };
+    const unsub = subscribeRailNetwork(update);
+    update();
+    return () => {
+      unsub();
+      if (raf) clearTimeout(raf);
+    };
+  }, []);
+  return status;
+}
+
 function lon2tileX(lon: number, z: number): number {
   return Math.floor(((lon + 180) / 360) * (1 << z));
 }
@@ -756,6 +806,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const [mapInstance, setMapInstance] = useState<MLMap | null>(null);
 
   useHikingLayers(mapInstance);
+  const railNetworkStatus = useRailNetworkStatus();
 
   // Long-press anywhere on the map → drop a waypoint at that location.
   useLongPress(mapInstance, true, useCallback((lng: number, lat: number) => {
@@ -1253,22 +1304,29 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       for (const t of toFetch.slice(0, slots)) {
         const key = `${t.x}/${t.y}`;
         railTileInFlight.add(key);
+        notifyRailNetworkStatus();
         const ctrl = new AbortController();
         const bbox = railTileBbox(RAIL_TILE_ZOOM, t.x, t.y);
         fetchRailNetwork(bbox, ctrl.signal)
           .then(({ lines, stations }) => {
             railTileCache.set(key, { lines: lines.features, stations });
             railTileInFlight.delete(key);
+            notifyRailNetworkStatus();
             renderFromCache();
             fetchMissingTiles();
           })
           .catch((err) => {
             railTileInFlight.delete(key);
-            if ((err as Error).name === "AbortError") return;
-            if (isRateLimitError(err)) {
-              railRateLimitedUntil = Date.now() + RAIL_RATE_LIMIT_BACKOFF_MS;
+            if ((err as Error).name === "AbortError") {
+              notifyRailNetworkStatus();
               return;
             }
+            if (isRateLimitError(err)) {
+              railRateLimitedUntil = Date.now() + RAIL_RATE_LIMIT_BACKOFF_MS;
+              notifyRailNetworkStatus();
+              return;
+            }
+            notifyRailNetworkStatus();
             console.warn("[rail-network]", err);
           });
       }
@@ -1568,6 +1626,40 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       {/* image / hybrid / vector basemap switch (top-left of map) */}
       <BasemapSwitch mode={basemapMode} onModeChange={setBasemapMode} />
 
+      {/* Rail-network loading pill (top-right, only while busy or throttled) */}
+      {railwayOn
+        && railStyle === "lines"
+        && (railNetworkStatus.inFlight > 0
+          || railNetworkStatus.cooldownUntil > Date.now()) && (
+        <div className="pointer-events-none absolute right-3 top-3 z-10">
+          <div className="hud-panel hud-mono flex items-center gap-2 px-3 py-1.5 text-[10px] text-[color:var(--hud-text)]">
+            <span className="hud-corner-tr" aria-hidden />
+            <span className="hud-corner-br" aria-hidden />
+            <span
+              aria-hidden
+              className="hud-loading-dot"
+              data-state={
+                railNetworkStatus.cooldownUntil > Date.now()
+                  ? "throttled"
+                  : "loading"
+              }
+            />
+            <span>
+              {railNetworkStatus.cooldownUntil > Date.now()
+                ? `Overpass throttled · ${Math.max(
+                    0,
+                    Math.ceil(
+                      (railNetworkStatus.cooldownUntil - Date.now()) / 1000,
+                    ),
+                  )}s`
+                : `Loading rails · ${railNetworkStatus.inFlight} tile${
+                    railNetworkStatus.inFlight === 1 ? "" : "s"
+                  }`}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* geolocate status banner (diagnostic — bottom center, above scale) */}
       {(geoStatus || geoHeading) && (
         <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
@@ -1676,6 +1768,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                   onOpacityChange={setOverlayOpacityForActive}
                   railStyle={railStyle}
                   onRailStyleChange={setRailStyle}
+                  railNetworkStatus={railNetworkStatus}
                   weatherProps={{
                     frames: weatherFrames,
                     frameIndex: weatherFrameIndex,
@@ -1966,6 +2059,7 @@ interface OverlayPanelProps {
   onOpacityChange: (o: number) => void;
   railStyle: "tiles" | "lines";
   onRailStyleChange: (s: "tiles" | "lines") => void;
+  railNetworkStatus: RailNetworkStatus;
   weatherProps: {
     frames: { time: number; date: string; urls: string[] }[];
     frameIndex: number;
@@ -1983,6 +2077,7 @@ function OverlayPanel({
   onOpacityChange,
   railStyle,
   onRailStyleChange,
+  railNetworkStatus,
   weatherProps,
 }: OverlayPanelProps) {
   const tabs: { key: OverlayKind | null; label: string }[] = [
@@ -1993,15 +2088,29 @@ function OverlayPanel({
     { key: "ndvi", label: "NDVI" },
   ];
 
+  const railLineCaption = (() => {
+    const cooldownLeft = Math.max(
+      0,
+      Math.ceil((railNetworkStatus.cooldownUntil - Date.now()) / 1000),
+    );
+    if (cooldownLeft > 0) {
+      return `Overpass throttled · retrying in ${cooldownLeft}s`;
+    }
+    if (railNetworkStatus.inFlight > 0) {
+      return `Loading rails… (${railNetworkStatus.inFlight} tile${railNetworkStatus.inFlight === 1 ? "" : "s"})`;
+    }
+    return "OSM rail lines · Overpass · cached per tile";
+  })();
+
   const caption =
     active === "clouds"
-      ? "NASA GIBS · VIIRS SNPP true-color · daily"
+      ? "NASA GIBS · VIIRS NOAA-20 true-color · daily"
       : active === "rail"
         ? railStyle === "lines"
-          ? "OSM rail lines · Overpass · no labels"
+          ? railLineCaption
           : "OpenRailwayMap raster · OSM"
         : active === "fires"
-          ? "GOES-East/West · 10 min · Americas + Pacific"
+          ? "VIIRS NOAA-20 Thermal Anomalies · daily · global"
           : active === "ndvi"
             ? "MODIS Terra · 8-day · 1km"
             : null;
@@ -2124,7 +2233,23 @@ function OverlayPanel({
               </span>
             </div>
             {caption && (
-              <div className="text-[10px] text-[color:var(--hud-text-muted)]">{caption}</div>
+              <div className="flex items-center gap-1.5 text-[10px] text-[color:var(--hud-text-muted)]">
+                {active === "rail"
+                  && railStyle === "lines"
+                  && (railNetworkStatus.inFlight > 0
+                    || railNetworkStatus.cooldownUntil > Date.now()) && (
+                    <span
+                      aria-hidden
+                      className="hud-loading-dot"
+                      data-state={
+                        railNetworkStatus.cooldownUntil > Date.now()
+                          ? "throttled"
+                          : "loading"
+                      }
+                    />
+                  )}
+                <span>{caption}</span>
+              </div>
             )}
           </>
         )}

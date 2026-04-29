@@ -491,6 +491,26 @@ input[type="range"].hud-slider::-moz-range-thumb {
   background: rgba(212, 255, 56, 0.22);
 }
 
+/* ── Loading dot (used in rail-network status, etc.) ────────────────── */
+.hud-loading-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hud-accent);
+  box-shadow: 0 0 6px var(--hud-accent-glow);
+  animation: hud-loading-pulse 1.1s ease-in-out infinite;
+}
+.hud-loading-dot[data-state="throttled"] {
+  background: var(--hud-warn, #ffb561);
+  box-shadow: 0 0 6px rgba(255, 181, 97, 0.6);
+  animation-duration: 1.6s;
+}
+@keyframes hud-loading-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
 /* Secondary line under a basemap label (e.g. sensor + date) */
 .hud-basemap-btn-subtitle {
   display: block;
