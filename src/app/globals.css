@@ -480,6 +480,91 @@ input[type="range"].hud-slider::-moz-range-thumb {
   box-shadow: 0 0 6px var(--hud-accent-glow);
 }
 
+/* When a selected entry is also the live (mode-active) one, brighten it */
+.hud-basemap-btn[data-live="true"] {
+  background: rgba(212, 255, 56, 0.22);
+}
+
+/* ── Basemap mode switch (image / vector) on the main map ───────────── */
+.hud-basemap-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--hud-surface);
+  border: 1px solid var(--hud-border);
+  border-radius: 2px;
+  padding: 2px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.hud-basemap-switch-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 12px;
+  min-width: 96px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 1px;
+  color: var(--hud-text-muted);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.hud-basemap-switch-btn:hover {
+  color: var(--hud-text);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hud-basemap-switch-btn[data-active="true"] {
+  color: var(--hud-accent);
+  background: var(--hud-accent-soft);
+  border-color: var(--hud-border-strong);
+  text-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+.hud-basemap-switch-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hud-basemap-switch-sub {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: inherit;
+  opacity: 0.7;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-basemap-switch-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  background: transparent;
+  border: 0;
+  color: var(--hud-text-muted);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.hud-basemap-switch-toggle:hover {
+  color: var(--hud-accent);
+  background: var(--hud-accent-soft);
+}
+
 /* ── Section heading inside sidebar ─────────────────────────────────── */
 .hud-section-heading {
   display: flex;

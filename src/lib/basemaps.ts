@@ -112,4 +112,5 @@ export const BASEMAPS: Basemap[] = [
   },
 ];
 
-export const DEFAULT_BASEMAP_ID = "s2cloudless-2024";
+export const DEFAULT_IMAGE_BASEMAP_ID = "s2cloudless-2024";
+export const DEFAULT_VECTOR_BASEMAP_ID = "voyager";

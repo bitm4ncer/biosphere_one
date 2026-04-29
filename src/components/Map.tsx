@@ -3,8 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import maplibregl, { Map as MLMap, ScaleControl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { BASEMAPS, type Basemap, type BasemapCategory } from "@/lib/basemaps";
-import { useSettings, type OverlayKind } from "@/lib/settings";
+import {
+  BASEMAPS,
+  DEFAULT_IMAGE_BASEMAP_ID,
+  DEFAULT_VECTOR_BASEMAP_ID,
+  type Basemap,
+} from "@/lib/basemaps";
+import { useSettings, type BasemapMode, type OverlayKind } from "@/lib/settings";
 import { getAccessToken } from "@/lib/sentinel/auth";
 import { fetchDayOverlay } from "@/lib/sentinel/latest-overlay";
 import { searchCatalog, type Snapshot } from "@/lib/sentinel/catalog";
@@ -469,7 +474,9 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const coneRef = useRef<HTMLDivElement | null>(null);
   const compassUnsubRef = useRef<(() => void) | null>(null);
   const {
-    basemapId: active,
+    imageBasemapId,
+    vectorBasemapId,
+    basemapMode,
     projection,
     activeOverlay,
     weatherOpacity,
@@ -477,7 +484,10 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     railStyle,
     firesOpacity,
     ndviOpacity,
-    setBasemapId: setActive,
+    setImageBasemapId,
+    setVectorBasemapId,
+    setBasemapMode,
+    toggleBasemapMode,
     setProjection,
     setActiveOverlay,
     setWeatherOpacity,
@@ -486,6 +496,8 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     setFiresOpacity,
     setNdviOpacity,
   } = useSettings();
+  const active =
+    basemapMode === "vector" ? vectorBasemapId : imageBasemapId;
   const weatherOn = activeOverlay === "clouds";
   const railwayOn = activeOverlay === "rail";
   const firesOn = activeOverlay === "fires";
@@ -1168,6 +1180,19 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
+      {/* image/vector basemap switch (top-left of map) */}
+      <BasemapSwitch
+        mode={basemapMode}
+        onModeChange={setBasemapMode}
+        onToggle={toggleBasemapMode}
+        imageLabel={
+          BASEMAPS.find((b) => b.id === imageBasemapId)?.label ?? "Image"
+        }
+        vectorLabel={
+          BASEMAPS.find((b) => b.id === vectorBasemapId)?.label ?? "Vector"
+        }
+      />
+
       {/* geolocate status banner (diagnostic — bottom center, above scale) */}
       {(geoStatus || geoHeading) && (
         <div className="pointer-events-auto absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
@@ -1253,7 +1278,19 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                   </span>
                 </HudPanel>
 
-                <BasemapPanel activeId={active} onSelect={setActive} />
+                <BasemapPanel
+                  imageId={imageBasemapId}
+                  vectorId={vectorBasemapId}
+                  mode={basemapMode}
+                  onSelectImage={(id) => {
+                    setImageBasemapId(id);
+                    setBasemapMode("photo");
+                  }}
+                  onSelectVector={(id) => {
+                    setVectorBasemapId(id);
+                    setBasemapMode("vector");
+                  }}
+                />
 
                 <OverlayPanel
                   active={activeOverlay}
@@ -1303,41 +1340,164 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 }
 
 interface BasemapPanelProps {
-  activeId: string;
-  onSelect: (id: string) => void;
+  imageId: string;
+  vectorId: string;
+  mode: BasemapMode;
+  onSelectImage: (id: string) => void;
+  onSelectVector: (id: string) => void;
 }
 
-function BasemapPanel({ activeId, onSelect }: BasemapPanelProps) {
-  const groups: { key: BasemapCategory; label: string; items: Basemap[] }[] = [
-    { key: "photo", label: "Photo Maps", items: BASEMAPS.filter((b) => b.category === "photo") },
-    { key: "vector", label: "Vector Maps", items: BASEMAPS.filter((b) => b.category === "vector") },
-  ];
+function BasemapPanel({
+  imageId,
+  vectorId,
+  mode,
+  onSelectImage,
+  onSelectVector,
+}: BasemapPanelProps) {
+  const imageMaps = BASEMAPS.filter((b) => b.category === "photo");
+  const vectorMaps = BASEMAPS.filter((b) => b.category === "vector");
+
+  const renderGroup = (
+    label: string,
+    items: Basemap[],
+    selectedId: string,
+    isLive: boolean,
+    onSelect: (id: string) => void,
+    fallbackId: string,
+  ) => {
+    const effectiveId = items.some((b) => b.id === selectedId)
+      ? selectedId
+      : fallbackId;
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="hud-section-heading">
+          <span className="hud-label text-[9px]">{label}</span>
+          {isLive && (
+            <span
+              className="hud-label text-[9px] text-[color:var(--hud-accent)]"
+              aria-label="currently displayed"
+            >
+              · LIVE
+            </span>
+          )}
+          <span className="line" aria-hidden />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          {items.map((b) => {
+            const selected = effectiveId === b.id;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => onSelect(b.id)}
+                data-active={selected}
+                data-live={selected && isLive}
+                className="hud-basemap-btn"
+                aria-pressed={selected}
+              >
+                {b.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <HudPanel label="Basemap">
       <div className="flex flex-col gap-2.5">
-        {groups.map((g) => (
-          <div key={g.key} className="flex flex-col gap-1">
-            <div className="hud-section-heading">
-              <span className="hud-label text-[9px]">{g.label}</span>
-              <span className="line" aria-hidden />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              {g.items.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => onSelect(b.id)}
-                  data-active={activeId === b.id}
-                  className="hud-basemap-btn"
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+        {renderGroup(
+          "Image Maps",
+          imageMaps,
+          imageId,
+          mode === "photo",
+          onSelectImage,
+          DEFAULT_IMAGE_BASEMAP_ID,
+        )}
+        {renderGroup(
+          "Vector Maps",
+          vectorMaps,
+          vectorId,
+          mode === "vector",
+          onSelectVector,
+          DEFAULT_VECTOR_BASEMAP_ID,
+        )}
       </div>
     </HudPanel>
+  );
+}
+
+interface BasemapSwitchProps {
+  mode: BasemapMode;
+  onModeChange: (mode: BasemapMode) => void;
+  onToggle: () => void;
+  imageLabel: string;
+  vectorLabel: string;
+}
+
+function BasemapSwitch({
+  mode,
+  onModeChange,
+  onToggle,
+  imageLabel,
+  vectorLabel,
+}: BasemapSwitchProps) {
+  return (
+    <div className="pointer-events-auto absolute left-3 top-3 z-10">
+      <div
+        className="hud-basemap-switch"
+        role="group"
+        aria-label="Basemap mode"
+      >
+        <span className="hud-corner-tr" aria-hidden />
+        <span className="hud-corner-br" aria-hidden />
+        <button
+          type="button"
+          onClick={() => onModeChange("photo")}
+          data-active={mode === "photo"}
+          className="hud-basemap-switch-btn"
+          aria-pressed={mode === "photo"}
+          title={imageLabel}
+        >
+          <span className="hud-basemap-switch-label">Image</span>
+          <span className="hud-basemap-switch-sub">{imageLabel}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="hud-basemap-switch-toggle"
+          aria-label={`Switch to ${mode === "photo" ? "vector" : "image"} map`}
+          title="Toggle image / vector"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M7 7h13l-3-3" />
+            <path d="M17 17H4l3 3" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => onModeChange("vector")}
+          data-active={mode === "vector"}
+          className="hud-basemap-switch-btn"
+          aria-pressed={mode === "vector"}
+          title={vectorLabel}
+        >
+          <span className="hud-basemap-switch-label">Vector</span>
+          <span className="hud-basemap-switch-sub">{vectorLabel}</span>
+        </button>
+      </div>
+    </div>
   );
 }
 

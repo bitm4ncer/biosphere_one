@@ -3,14 +3,22 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { DEFAULT_BASEMAP_ID } from "./basemaps";
+import {
+  BASEMAPS,
+  DEFAULT_IMAGE_BASEMAP_ID,
+  DEFAULT_VECTOR_BASEMAP_ID,
+  type BasemapCategory,
+} from "./basemaps";
 
 export type Projection = "mercator" | "globe";
 export type OverlayKind = "clouds" | "rail" | "fires" | "ndvi";
 export type RailStyle = "tiles" | "lines";
+export type BasemapMode = BasemapCategory; // "photo" | "vector"
 
 export interface Settings {
-  basemapId: string;
+  imageBasemapId: string;
+  vectorBasemapId: string;
+  basemapMode: BasemapMode;
   projection: Projection;
   activeOverlay: OverlayKind | null;
   weatherOpacity: number;
@@ -18,7 +26,10 @@ export interface Settings {
   railStyle: RailStyle;
   firesOpacity: number;
   ndviOpacity: number;
-  setBasemapId: (id: string) => void;
+  setImageBasemapId: (id: string) => void;
+  setVectorBasemapId: (id: string) => void;
+  setBasemapMode: (mode: BasemapMode) => void;
+  toggleBasemapMode: () => void;
   setProjection: (p: Projection) => void;
   setActiveOverlay: (kind: OverlayKind | null) => void;
   setWeatherOpacity: (o: number) => void;
@@ -31,7 +42,9 @@ export interface Settings {
 export const useSettings = create<Settings>()(
   persist(
     (set) => ({
-      basemapId: DEFAULT_BASEMAP_ID,
+      imageBasemapId: DEFAULT_IMAGE_BASEMAP_ID,
+      vectorBasemapId: DEFAULT_VECTOR_BASEMAP_ID,
+      basemapMode: "photo",
       projection: "mercator",
       activeOverlay: null,
       weatherOpacity: 0.8,
@@ -39,7 +52,11 @@ export const useSettings = create<Settings>()(
       railStyle: "lines",
       firesOpacity: 0.9,
       ndviOpacity: 0.7,
-      setBasemapId: (id) => set({ basemapId: id }),
+      setImageBasemapId: (id) => set({ imageBasemapId: id }),
+      setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
+      setBasemapMode: (mode) => set({ basemapMode: mode }),
+      toggleBasemapMode: () =>
+        set((s) => ({ basemapMode: s.basemapMode === "photo" ? "vector" : "photo" })),
       setProjection: (p) => set({ projection: p }),
       setActiveOverlay: (kind) => set({ activeOverlay: kind }),
       setWeatherOpacity: (o) => set({ weatherOpacity: o }),
@@ -50,10 +67,12 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
-        basemapId: state.basemapId,
+        imageBasemapId: state.imageBasemapId,
+        vectorBasemapId: state.vectorBasemapId,
+        basemapMode: state.basemapMode,
         projection: state.projection,
         activeOverlay: state.activeOverlay,
         weatherOpacity: state.weatherOpacity,
@@ -84,6 +103,25 @@ export const useSettings = create<Settings>()(
         if (typeof p.firesOpacity !== "number") p.firesOpacity = 0.9;
         if (typeof p.ndviOpacity !== "number") p.ndviOpacity = 0.7;
         if (p.railStyle !== "tiles" && p.railStyle !== "lines") p.railStyle = "lines";
+        // v6 → v7: split single basemapId into image/vector slots + mode.
+        if ("basemapId" in p) {
+          const oldId = typeof p.basemapId === "string" ? p.basemapId : "";
+          const old = BASEMAPS.find((b) => b.id === oldId);
+          if (old?.category === "vector") {
+            p.vectorBasemapId = old.id;
+            p.basemapMode = "vector";
+            if (typeof p.imageBasemapId !== "string") p.imageBasemapId = DEFAULT_IMAGE_BASEMAP_ID;
+          } else {
+            // Photo, unknown id, or missing → treat as image.
+            p.imageBasemapId = old?.id ?? DEFAULT_IMAGE_BASEMAP_ID;
+            p.basemapMode = "photo";
+            if (typeof p.vectorBasemapId !== "string") p.vectorBasemapId = DEFAULT_VECTOR_BASEMAP_ID;
+          }
+          delete p.basemapId;
+        }
+        if (typeof p.imageBasemapId !== "string") p.imageBasemapId = DEFAULT_IMAGE_BASEMAP_ID;
+        if (typeof p.vectorBasemapId !== "string") p.vectorBasemapId = DEFAULT_VECTOR_BASEMAP_ID;
+        if (p.basemapMode !== "photo" && p.basemapMode !== "vector") p.basemapMode = "photo";
         return p;
       },
     },
