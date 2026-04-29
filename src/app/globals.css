@@ -602,6 +602,40 @@ input[type="range"].hud-slider::-moz-range-thumb {
   cursor: not-allowed;
 }
 
+/* ── Toggle switch ──────────────────────────────────────────────────── */
+.hud-switch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: 10px;
+  border: 1px solid var(--hud-border);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+
+.hud-switch[data-on="true"] {
+  background: var(--hud-accent-soft);
+  border-color: var(--hud-border-strong);
+}
+
+.hud-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--hud-text-muted);
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.hud-switch[data-on="true"] .hud-switch-thumb {
+  transform: translateX(14px);
+  background: var(--hud-accent);
+  box-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
 /* ── Search input (used in header) ──────────────────────────────────── */
 .hud-search {
   border: 1px solid var(--hud-border);

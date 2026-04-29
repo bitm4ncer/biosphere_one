@@ -18,7 +18,9 @@ import { SettingsGear } from "./SettingsGear";
 import type { GeocodeResult } from "@/lib/geocode";
 import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
-import { fetchRailLines } from "@/lib/hiking/overpass";
+import { fetchRailLines, fetchStationsInBbox } from "@/lib/hiking/overpass";
+import { useHiking } from "@/lib/hiking/store";
+import { useLongPress } from "./hiking/useLongPress";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 import { ProjectionControl } from "./ProjectionControl";
 import { HudPanel } from "./hud/HudPanel";
@@ -308,6 +310,93 @@ function removeRailLinesLayer(map: MLMap) {
     map.removeSource(RAIL_LINES_SOURCE_ID);
 }
 
+// Stations rendered alongside the rail-lines overlay. Tap = add as waypoint.
+const RAIL_STATIONS_SOURCE_ID = "rail-stations-src";
+const RAIL_STATIONS_DOT_LAYER_ID = "rail-stations-dot";
+const RAIL_STATIONS_HIT_LAYER_ID = "rail-stations-hit";
+const RAIL_STATIONS_LABEL_LAYER_ID = "rail-stations-label";
+const RAIL_STATIONS_MIN_ZOOM = 10;
+
+function ensureRailStationsLayer(map: MLMap) {
+  if (!map.getSource(RAIL_STATIONS_SOURCE_ID)) {
+    map.addSource(RAIL_STATIONS_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer(RAIL_STATIONS_HIT_LAYER_ID)) {
+    // Invisible larger circle to make tap targets thumb-friendly on mobile
+    map.addLayer({
+      id: RAIL_STATIONS_HIT_LAYER_ID,
+      type: "circle",
+      source: RAIL_STATIONS_SOURCE_ID,
+      paint: {
+        "circle-radius": 16,
+        "circle-color": "transparent",
+        "circle-stroke-width": 0,
+      },
+    });
+  }
+  if (!map.getLayer(RAIL_STATIONS_DOT_LAYER_ID)) {
+    map.addLayer({
+      id: RAIL_STATIONS_DOT_LAYER_ID,
+      type: "circle",
+      source: RAIL_STATIONS_SOURCE_ID,
+      paint: {
+        "circle-radius": [
+          "interpolate", ["linear"], ["zoom"],
+          10, 3,
+          14, 4.5,
+          17, 6,
+        ],
+        "circle-color": "#d4ff38",
+        "circle-stroke-color": "#0a0a0b",
+        "circle-stroke-width": 1.5,
+        "circle-opacity": 0.95,
+      },
+    });
+  }
+  if (!map.getLayer(RAIL_STATIONS_LABEL_LAYER_ID)) {
+    map.addLayer({
+      id: RAIL_STATIONS_LABEL_LAYER_ID,
+      type: "symbol",
+      source: RAIL_STATIONS_SOURCE_ID,
+      minzoom: 12,
+      layout: {
+        "text-field": ["get", "name"],
+        "text-size": 11,
+        "text-offset": [0, 1.2],
+        "text-anchor": "top",
+        "text-optional": true,
+        "text-allow-overlap": false,
+      },
+      paint: {
+        "text-color": "#e8f0d9",
+        "text-halo-color": "#0a0a0b",
+        "text-halo-width": 1.2,
+      },
+    });
+  }
+}
+
+function setRailStationsData(map: MLMap, data: GeoJSON.FeatureCollection) {
+  const src = map.getSource(RAIL_STATIONS_SOURCE_ID) as unknown as
+    | { setData?: (d: GeoJSON.FeatureCollection) => void }
+    | undefined;
+  if (src?.setData) src.setData(data);
+}
+
+function removeRailStationsLayer(map: MLMap) {
+  if (map.getLayer(RAIL_STATIONS_LABEL_LAYER_ID))
+    map.removeLayer(RAIL_STATIONS_LABEL_LAYER_ID);
+  if (map.getLayer(RAIL_STATIONS_DOT_LAYER_ID))
+    map.removeLayer(RAIL_STATIONS_DOT_LAYER_ID);
+  if (map.getLayer(RAIL_STATIONS_HIT_LAYER_ID))
+    map.removeLayer(RAIL_STATIONS_HIT_LAYER_ID);
+  if (map.getSource(RAIL_STATIONS_SOURCE_ID))
+    map.removeSource(RAIL_STATIONS_SOURCE_ID);
+}
+
 const GIBS_MAX_ZOOM = 9;
 
 function ensureGibsOverlay(
@@ -579,6 +668,16 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const [mapInstance, setMapInstance] = useState<MLMap | null>(null);
 
   useHikingLayers(mapInstance);
+
+  // Long-press anywhere on the map → drop a waypoint at that location.
+  useLongPress(mapInstance, true, useCallback((lng: number, lat: number) => {
+    useHiking.getState().addWaypoint({
+      lat,
+      lon: lng,
+      label: `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`,
+      source: "longpress",
+    });
+  }, []));
 
   const toggleSidebar = (pane: SidebarPane) => {
     setActiveSidebar((current) => (current === pane ? null : pane));
@@ -1018,6 +1117,109 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     if (!map || !railwayOn || railStyle !== "lines") return;
     updateRailLinesOpacity(map, railwayOpacity);
   }, [railwayOn, railStyle, railwayOpacity]);
+
+  // Stations alongside rail-lines: clickable, tap = add waypoint.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const linesActive = railwayOn && railStyle === "lines";
+    if (!linesActive) {
+      removeRailStationsLayer(map);
+      return;
+    }
+
+    let ctrl: AbortController | null = null;
+    let timer: number | null = null;
+    let cancelled = false;
+
+    const fetchAndSet = async () => {
+      if (cancelled) return;
+      if (map.getZoom() < RAIL_STATIONS_MIN_ZOOM) {
+        setRailStationsData(map, { type: "FeatureCollection", features: [] });
+        return;
+      }
+      ctrl?.abort();
+      ctrl = new AbortController();
+      try {
+        const b = map.getBounds();
+        const bbox: [number, number, number, number] = [
+          b.getSouth(),
+          b.getWest(),
+          b.getNorth(),
+          b.getEast(),
+        ];
+        const stations = await fetchStationsInBbox(bbox, ctrl.signal);
+        if (cancelled || ctrl.signal.aborted) return;
+        const fc: GeoJSON.FeatureCollection = {
+          type: "FeatureCollection",
+          features: stations.map((s) => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [s.lon, s.lat] },
+            properties: { id: s.id, name: s.name },
+          })),
+        };
+        setRailStationsData(map, fc);
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") {
+          console.warn("[rail-stations]", err);
+        }
+      }
+    };
+
+    const debouncedFetch = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(fetchAndSet, 400);
+    };
+
+    const apply = () => {
+      ensureRailStationsLayer(map);
+      fetchAndSet();
+    };
+
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      const feats = map.queryRenderedFeatures(e.point, {
+        layers: [RAIL_STATIONS_HIT_LAYER_ID, RAIL_STATIONS_DOT_LAYER_ID],
+      });
+      if (feats.length === 0) return;
+      const f = feats[0];
+      const coords = (f.geometry as GeoJSON.Point).coordinates as [number, number];
+      const name = (f.properties?.name as string | undefined) ?? "Station";
+      e.preventDefault();
+      e.originalEvent?.stopPropagation();
+      useHiking.getState().addWaypoint({
+        lat: coords[1],
+        lon: coords[0],
+        label: name,
+        source: "station",
+      });
+    };
+    const onEnter = () => {
+      map.getCanvas().style.cursor = "pointer";
+    };
+    const onLeave = () => {
+      map.getCanvas().style.cursor = "";
+    };
+
+    if (map.isStyleLoaded()) apply();
+    else map.once("style.load", apply);
+    map.on("style.load", apply);
+    map.on("moveend", debouncedFetch);
+    map.on("click", RAIL_STATIONS_HIT_LAYER_ID, onClick);
+    map.on("mouseenter", RAIL_STATIONS_HIT_LAYER_ID, onEnter);
+    map.on("mouseleave", RAIL_STATIONS_HIT_LAYER_ID, onLeave);
+
+    return () => {
+      cancelled = true;
+      ctrl?.abort();
+      if (timer != null) window.clearTimeout(timer);
+      map.off("style.load", apply);
+      map.off("moveend", debouncedFetch);
+      map.off("click", RAIL_STATIONS_HIT_LAYER_ID, onClick);
+      map.off("mouseenter", RAIL_STATIONS_HIT_LAYER_ID, onEnter);
+      map.off("mouseleave", RAIL_STATIONS_HIT_LAYER_ID, onLeave);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railwayOn, railStyle, active]);
 
   useEffect(() => {
     if (!firesOn) {

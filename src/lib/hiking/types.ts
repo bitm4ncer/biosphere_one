@@ -3,21 +3,31 @@ export interface LatLng {
   lon: number;
 }
 
+/** A user-defined route point. Order in the list = traversal order. */
+export interface Waypoint {
+  id: string;
+  lat: number;
+  lon: number;
+  /** Display label — place name, station name, or coords */
+  label: string;
+  /** Where the waypoint came from, used for the marker icon hint */
+  source: "gps" | "search" | "station" | "longpress" | "manual";
+}
+
+/** Cached for station-tap-to-add when Rail→Lines is active. */
 export interface Station {
   id: string;
   name: string;
   lat: number;
   lon: number;
-  /** e.g. "station", "halt", "tram_stop" */
   kind: string;
-  /** `ref` tag, useful as a label when name is missing */
   ref?: string;
   tags: Record<string, string>;
 }
 
 export interface RouteCandidate {
   id: string;
-  source: "brouter" | "ors";
+  source: "brouter";
   profile: string;
   alternativeIdx: number;
   distanceKm: number;
@@ -33,8 +43,6 @@ export interface RouteCandidate {
 
 export type HikingPhase =
   | { kind: "idle" }
-  | { kind: "fetchingStations" }
-  | { kind: "stations"; count: number }
   | { kind: "routing" }
   | { kind: "routed" }
   | { kind: "error"; message: string };

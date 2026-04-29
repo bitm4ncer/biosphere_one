@@ -1,4 +1,4 @@
-import type { LatLng, RouteCandidate } from "./types";
+import type { LatLng, RouteCandidate, Waypoint } from "./types";
 
 const BROUTER_URL = "https://brouter.de/brouter";
 
@@ -20,22 +20,36 @@ interface BrouterProperties {
   messages?: unknown[];
 }
 
+function lonlatsParam(points: LatLng[]): string {
+  return points.map((p) => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`).join("|");
+}
+
 /**
- * Call BRouter's public endpoint and parse the GeoJSON response.
- * Returns a single RouteCandidate for the requested alternative index.
+ * Convert waypoints (+ optional round-trip closing point) into the BRouter
+ * `lonlats` parameter format. Returns null if there are too few points.
+ */
+export function buildRoutePoints(
+  waypoints: Waypoint[],
+  roundTrip: boolean,
+): LatLng[] | null {
+  if (waypoints.length < 2) return null;
+  const points: LatLng[] = waypoints.map((w) => ({ lat: w.lat, lon: w.lon }));
+  if (roundTrip) points.push(points[0]);
+  return points;
+}
+
+/**
+ * Call BRouter for a sequence of waypoints + a single alternative index.
+ * The first and last entries of `points` are start and end; everything in
+ * between is treated as a via.
  */
 export async function fetchBrouterRoute(params: {
-  from: LatLng;
-  to: LatLng;
-  vias?: LatLng[];
+  points: LatLng[];
   profile: BrouterProfile;
   alternativeIdx: number;
   signal?: AbortSignal;
 }): Promise<RouteCandidate> {
-  const waypoints = [params.from, ...(params.vias ?? []), params.to];
-  const lonlats = waypoints
-    .map((p) => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`)
-    .join("|");
+  const lonlats = lonlatsParam(params.points);
   const qs = new URLSearchParams({
     lonlats,
     profile: params.profile,
@@ -76,25 +90,21 @@ export async function fetchBrouterRoute(params: {
 }
 
 /**
- * Fetch all available alternatives for one profile by iterating `alternativeidx`
- * from 0 until BRouter reports no further alternative.
+ * Fetch up to `maxAlternatives` alternatives for a single profile, iterating
+ * BRouter's `alternativeidx` from 0 until BRouter reports no further variant.
  */
 export async function fetchBrouterAlternatives(params: {
-  from: LatLng;
-  to: LatLng;
-  vias?: LatLng[];
+  points: LatLng[];
   profile: BrouterProfile;
   maxAlternatives?: number;
   signal?: AbortSignal;
 }): Promise<RouteCandidate[]> {
-  const max = params.maxAlternatives ?? 4;
+  const max = params.maxAlternatives ?? 3;
   const out: RouteCandidate[] = [];
   for (let alt = 0; alt < max; alt += 1) {
     try {
       const r = await fetchBrouterRoute({
-        from: params.from,
-        to: params.to,
-        vias: params.vias,
+        points: params.points,
         profile: params.profile,
         alternativeIdx: alt,
         signal: params.signal,
@@ -102,7 +112,6 @@ export async function fetchBrouterAlternatives(params: {
       out.push(r);
     } catch (err) {
       if ((err as Error).name === "AbortError") throw err;
-      // no more alternatives — break, but keep what we have
       if (alt === 0) throw err;
       break;
     }

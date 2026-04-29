@@ -1,4 +1,4 @@
-import type { RouteCandidate, Station } from "./types";
+import type { RouteCandidate, Waypoint } from "./types";
 
 function esc(s: string): string {
   return s
@@ -10,7 +10,7 @@ function esc(s: string): string {
 
 export function routeToGpx(
   candidate: RouteCandidate,
-  opts: { name?: string; start?: Station | null; end?: Station | null } = {},
+  opts: { name?: string; waypoints?: Waypoint[] } = {},
 ): string {
   const trkName = esc(opts.name ?? "Hiking route");
   const points = candidate.coordinates
@@ -20,17 +20,12 @@ export function routeToGpx(
     })
     .join("\n");
 
-  const wpts: string[] = [];
-  if (opts.start) {
-    wpts.push(
-      `  <wpt lat="${opts.start.lat.toFixed(6)}" lon="${opts.start.lon.toFixed(6)}"><name>${esc(opts.start.name)}</name><sym>Train Station</sym></wpt>`,
-    );
-  }
-  if (opts.end) {
-    wpts.push(
-      `  <wpt lat="${opts.end.lat.toFixed(6)}" lon="${opts.end.lon.toFixed(6)}"><name>${esc(opts.end.name)}</name><sym>Train Station</sym></wpt>`,
-    );
-  }
+  const wpts = (opts.waypoints ?? [])
+    .map(
+      (w, i) =>
+        `  <wpt lat="${w.lat.toFixed(6)}" lon="${w.lon.toFixed(6)}"><name>${i + 1}. ${esc(w.label)}</name></wpt>`,
+    )
+    .join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="biosphere1" xmlns="http://www.topografix.com/GPX/1/1">
@@ -38,7 +33,7 @@ export function routeToGpx(
     <name>${trkName}</name>
     <desc>${candidate.distanceKm.toFixed(1)} km · ${Math.round(candidate.durationMin)} min · +${Math.round(candidate.ascentM)} m</desc>
   </metadata>
-${wpts.join("\n")}
+${wpts}
   <trk>
     <name>${trkName}</name>
     <trkseg>

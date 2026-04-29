@@ -2,47 +2,41 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type {
-  HikingPhase,
-  LatLng,
-  RouteCandidate,
-  Station,
-} from "./types";
+import type { HikingPhase, RouteCandidate, Waypoint } from "./types";
 import type { BrouterProfile } from "./routing";
 
 interface HikingState {
-  // persisted filters
+  // persisted (cache)
   enabled: boolean;
-  radiusKm: number;
-  distanceMin: number;
-  distanceMax: number;
-  greenMin: number;
-  profiles: BrouterProfile[];
-
-  // transient
-  center: LatLng | null;
-  stations: Station[];
-  startId: string | null;
-  endId: string | null;
+  waypoints: Waypoint[];
+  roundTrip: boolean;
+  profile: BrouterProfile;
   candidates: RouteCandidate[];
   selectedCandidateId: string | null;
+  /** When true, only the selected route is shown on the map; alts are hidden. */
+  finalized: boolean;
+
+  // transient
   phase: HikingPhase;
   notice: string | null;
 
   // actions
   setEnabled: (on: boolean) => void;
-  setRadiusKm: (km: number) => void;
-  setDistanceRange: (min: number, max: number) => void;
-  setGreenMin: (v: number) => void;
-  toggleProfile: (p: BrouterProfile) => void;
 
-  setCenter: (c: LatLng | null) => void;
-  setStations: (s: Station[]) => void;
-  pickStation: (id: string) => void;
-  clearStationSelection: () => void;
+  addWaypoint: (w: Omit<Waypoint, "id">) => void;
+  removeWaypoint: (id: string) => void;
+  moveWaypoint: (id: string, dir: -1 | 1) => void;
+  reverseWaypoints: () => void;
+  clearWaypoints: () => void;
+
+  setRoundTrip: (on: boolean) => void;
+  setProfile: (p: BrouterProfile) => void;
 
   setCandidates: (c: RouteCandidate[]) => void;
   selectCandidate: (id: string | null) => void;
+  finalizeRoute: () => void;
+  unfinalize: () => void;
+  clearRoute: () => void;
 
   setPhase: (p: HikingPhase) => void;
   setNotice: (n: string | null) => void;
@@ -51,107 +45,134 @@ interface HikingState {
 
 const DEFAULTS = {
   enabled: false,
-  radiusKm: 8,
-  distanceMin: 10,
-  distanceMax: 16,
-  greenMin: 0.4,
-  profiles: ["hiking-beta", "trekking"] as BrouterProfile[],
+  waypoints: [] as Waypoint[],
+  roundTrip: false,
+  profile: "hiking-beta" as BrouterProfile,
+  candidates: [] as RouteCandidate[],
+  selectedCandidateId: null as string | null,
+  finalized: false,
 };
+
+let waypointCounter = 0;
+function newWaypointId(): string {
+  waypointCounter += 1;
+  return `wp-${Date.now().toString(36)}-${waypointCounter}`;
+}
 
 export const useHiking = create<HikingState>()(
   persist(
     (set, get) => ({
       ...DEFAULTS,
-      center: null,
-      stations: [],
-      startId: null,
-      endId: null,
-      candidates: [],
-      selectedCandidateId: null,
       phase: { kind: "idle" },
       notice: null,
 
       setEnabled: (on) => set({ enabled: on }),
-      setRadiusKm: (km) =>
-        set({ radiusKm: Math.max(1, Math.min(50, Math.round(km))) }),
-      setDistanceRange: (min, max) => {
-        const lo = Math.max(1, Math.min(min, max));
-        const hi = Math.min(60, Math.max(lo + 1, max));
-        set({ distanceMin: lo, distanceMax: hi });
-      },
-      setGreenMin: (v) => set({ greenMin: Math.max(0, Math.min(1, v)) }),
-      toggleProfile: (p) =>
-        set((s) => ({
-          profiles: s.profiles.includes(p)
-            ? s.profiles.filter((x) => x !== p)
-            : [...s.profiles, p],
-        })),
 
-      setCenter: (c) => set({ center: c }),
-      setStations: (stations) => set({ stations }),
-      pickStation: (id) => {
-        const s = get();
-        if (s.startId === id) {
-          set({ startId: null });
-          return;
-        }
-        if (s.endId === id) {
-          set({ endId: null });
-          return;
-        }
-        if (!s.startId) {
-          set({ startId: id });
-          return;
-        }
-        if (!s.endId) {
-          set({ endId: id });
-          return;
-        }
-        // both set — replace end with new pick, keep start
-        set({ endId: id });
-      },
-      clearStationSelection: () => set({ startId: null, endId: null }),
+      addWaypoint: (w) =>
+        set((s) => ({
+          waypoints: [...s.waypoints, { ...w, id: newWaypointId() }],
+          // adding a waypoint invalidates the previous final selection
+          finalized: false,
+          // auto-enable so the user sees the marker immediately even if they
+          // added it from the rail overlay without opening the hiking panel
+          enabled: true,
+        })),
+      removeWaypoint: (id) =>
+        set((s) => ({
+          waypoints: s.waypoints.filter((w) => w.id !== id),
+          finalized: false,
+        })),
+      moveWaypoint: (id, dir) =>
+        set((s) => {
+          const idx = s.waypoints.findIndex((w) => w.id === id);
+          if (idx < 0) return s;
+          const ni = idx + dir;
+          if (ni < 0 || ni >= s.waypoints.length) return s;
+          const next = s.waypoints.slice();
+          const [item] = next.splice(idx, 1);
+          next.splice(ni, 0, item);
+          return { waypoints: next, finalized: false };
+        }),
+      reverseWaypoints: () =>
+        set((s) => ({
+          waypoints: [...s.waypoints].reverse(),
+          finalized: false,
+        })),
+      clearWaypoints: () =>
+        set({
+          waypoints: [],
+          candidates: [],
+          selectedCandidateId: null,
+          finalized: false,
+          phase: { kind: "idle" },
+          notice: null,
+        }),
+
+      setRoundTrip: (on) => set({ roundTrip: on, finalized: false }),
+      setProfile: (p) => set({ profile: p, finalized: false }),
 
       setCandidates: (candidates) =>
         set({
           candidates,
           selectedCandidateId: candidates[0]?.id ?? null,
+          finalized: false,
         }),
       selectCandidate: (id) => set({ selectedCandidateId: id }),
+      finalizeRoute: () => {
+        const s = get();
+        if (s.selectedCandidateId) set({ finalized: true });
+      },
+      unfinalize: () => set({ finalized: false }),
+      clearRoute: () =>
+        set({
+          candidates: [],
+          selectedCandidateId: null,
+          finalized: false,
+          phase: { kind: "idle" },
+        }),
 
       setPhase: (phase) => set({ phase }),
       setNotice: (notice) => set({ notice }),
       reset: () =>
         set({
-          stations: [],
-          startId: null,
-          endId: null,
+          waypoints: [],
           candidates: [],
           selectedCandidateId: null,
+          finalized: false,
           phase: { kind: "idle" },
           notice: null,
         }),
     }),
     {
       name: "biosphere1:hiking",
-      version: 1,
+      // bumped from 1 → 2: store shape changed (waypoints instead of stations)
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         enabled: state.enabled,
-        radiusKm: state.radiusKm,
-        distanceMin: state.distanceMin,
-        distanceMax: state.distanceMax,
-        greenMin: state.greenMin,
-        profiles: state.profiles,
+        waypoints: state.waypoints,
+        roundTrip: state.roundTrip,
+        profile: state.profile,
+        candidates: state.candidates,
+        selectedCandidateId: state.selectedCandidateId,
+        finalized: state.finalized,
       }),
+      migrate: (persisted: unknown, version: number) => {
+        // v1 stored station-pair workflow state. Drop it; user starts fresh.
+        if (!persisted || typeof persisted !== "object") return persisted;
+        if (version < 2) {
+          return {
+            enabled: false,
+            waypoints: [],
+            roundTrip: false,
+            profile: "hiking-beta",
+            candidates: [],
+            selectedCandidateId: null,
+            finalized: false,
+          };
+        }
+        return persisted;
+      },
     },
   ),
 );
-
-export function selectStation(
-  stations: Station[],
-  id: string | null,
-): Station | null {
-  if (!id) return null;
-  return stations.find((s) => s.id === id) ?? null;
-}

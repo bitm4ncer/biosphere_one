@@ -1,4 +1,4 @@
-import type { LatLng, Station } from "./types";
+import type { Station } from "./types";
 
 const ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
@@ -56,21 +56,27 @@ async function overpass(
   );
 }
 
-export async function fetchStationsAround(
-  center: LatLng,
-  radiusKm: number,
+/**
+ * Fetch railway station + halt nodes within a bounding box.
+ * bbox = [south, west, north, east] (Overpass order).
+ */
+export async function fetchStationsInBbox(
+  bbox: [number, number, number, number],
   signal?: AbortSignal,
 ): Promise<Station[]> {
-  const radiusM = Math.max(100, Math.round(radiusKm * 1000));
+  const [s, w, n, e] = bbox;
   const q = `
     [out:json][timeout:25];
     (
-      node[railway=station](around:${radiusM},${center.lat},${center.lon});
-      node[railway=halt](around:${radiusM},${center.lat},${center.lon});
+      node[railway=station](${s},${w},${n},${e});
+      node[railway=halt](${s},${w},${n},${e});
     );
     out body;
   `;
-  const data = await overpass(q, signal);
+  return parseStationsResponse(await overpass(q, signal));
+}
+
+function parseStationsResponse(data: OverpassResponse): Station[] {
   const out: Station[] = [];
   for (const el of data.elements) {
     if (el.type !== "node") continue;
