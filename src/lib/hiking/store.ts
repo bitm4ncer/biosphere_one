@@ -3,7 +3,9 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { HikingPhase, RouteCandidate, Waypoint } from "./types";
-import type { BrouterProfile } from "./routing";
+import { BROUTER_PROFILES, type BrouterProfile } from "./routing";
+
+const VALID_PROFILE_IDS = new Set<string>(BROUTER_PROFILES.map((p) => p.id));
 
 interface HikingState {
   // persisted (cache)
@@ -145,8 +147,8 @@ export const useHiking = create<HikingState>()(
     }),
     {
       name: "biosphere1:hiking",
-      // bumped from 1 → 2: store shape changed (waypoints instead of stations)
-      version: 2,
+      // v3: profile list reshuffled (walking-fast removed, bike profiles added).
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         enabled: state.enabled,
@@ -158,14 +160,29 @@ export const useHiking = create<HikingState>()(
         finalized: state.finalized,
       }),
       migrate: (persisted: unknown, version: number) => {
-        // v1 stored station-pair workflow state. Drop it; user starts fresh.
         if (!persisted || typeof persisted !== "object") return persisted;
         if (version < 2) {
+          // v1 stored station-pair workflow state — drop it.
           return {
             enabled: false,
             waypoints: [],
             roundTrip: false,
             profile: "hiking-beta",
+            candidates: [],
+            selectedCandidateId: null,
+            finalized: false,
+          };
+        }
+        if (version < 3) {
+          // walking-fast was removed; clear stale routes and remap.
+          const p = persisted as { profile?: string };
+          const fallback: BrouterProfile =
+            p.profile && VALID_PROFILE_IDS.has(p.profile)
+              ? (p.profile as BrouterProfile)
+              : "hiking-beta";
+          return {
+            ...persisted,
+            profile: fallback,
             candidates: [],
             selectedCandidateId: null,
             finalized: false,

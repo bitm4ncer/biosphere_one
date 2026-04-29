@@ -8,9 +8,16 @@ import { useHiking } from "@/lib/hiking/store";
 import { computeHikingRoute } from "@/lib/hiking/search";
 import {
   BROUTER_PROFILES,
+  profileMode,
   type BrouterProfile,
+  type RouteMode,
 } from "@/lib/hiking/routing";
 import { downloadGpx, routeToGpx } from "@/lib/hiking/gpx";
+import {
+  COLOR_END,
+  COLOR_START,
+  pastelForWaypoint,
+} from "@/components/hiking/useHikingLayers";
 import { ElevationChart } from "@/components/hiking/ElevationChart";
 import { geocode, type GeocodeResult } from "@/lib/geocode";
 
@@ -205,6 +212,7 @@ export function HikingPanel({ mapRef }: Props) {
               {waypoints.map((w, i) => (
                 <li key={w.id}>
                   <WaypointRow
+                    id={w.id}
                     index={i}
                     total={waypoints.length}
                     label={w.label}
@@ -252,22 +260,7 @@ export function HikingPanel({ mapRef }: Props) {
           >
             <ReverseIcon /> Reverse order
           </button>
-          <div className="flex flex-col gap-1">
-            <span className="hud-label text-[9px]">Profile</span>
-            <div className="hud-tab-row" style={{ gridTemplateColumns: `repeat(${BROUTER_PROFILES.length}, minmax(0, 1fr))` }}>
-              {BROUTER_PROFILES.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="hud-tab"
-                  data-active={profile === p.id}
-                  onClick={() => setProfile(p.id as BrouterProfile)}
-                >
-                  {p.label.replace("Hiking · ", "").replace("Walking · ", "")}
-                </button>
-              ))}
-            </div>
-          </div>
+          <ModeAndProfilePicker profile={profile} setProfile={setProfile} />
         </div>
       </HudPanel>
 
@@ -491,7 +484,76 @@ function RouteSummary({
   );
 }
 
+function ModeAndProfilePicker({
+  profile,
+  setProfile,
+}: {
+  profile: BrouterProfile;
+  setProfile: (p: BrouterProfile) => void;
+}) {
+  const mode = profileMode(profile);
+  const profilesForMode = useMemo(
+    () => BROUTER_PROFILES.filter((p) => p.mode === mode),
+    [mode],
+  );
+  const setMode = (m: RouteMode) => {
+    if (m === mode) return;
+    const first = BROUTER_PROFILES.find((p) => p.mode === m);
+    if (first) setProfile(first.id);
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
+        <span className="hud-label text-[9px]">Mode</span>
+        <div
+          className="hud-tab-row"
+          style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
+        >
+          <button
+            type="button"
+            className="hud-tab"
+            data-active={mode === "walk"}
+            onClick={() => setMode("walk")}
+          >
+            Walk
+          </button>
+          <button
+            type="button"
+            className="hud-tab"
+            data-active={mode === "bike"}
+            onClick={() => setMode("bike")}
+          >
+            Bike
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="hud-label text-[9px]">Profile</span>
+        <div
+          className="hud-tab-row"
+          style={{
+            gridTemplateColumns: `repeat(${profilesForMode.length}, minmax(0, 1fr))`,
+          }}
+        >
+          {profilesForMode.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="hud-tab"
+              data-active={profile === p.id}
+              onClick={() => setProfile(p.id)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WaypointRow({
+  id,
   index,
   total,
   label,
@@ -500,6 +562,7 @@ function WaypointRow({
   onDown,
   onDelete,
 }: {
+  id: string;
   index: number;
   total: number;
   label: string;
@@ -510,7 +573,11 @@ function WaypointRow({
 }) {
   const role = index === 0 ? "start" : index === total - 1 ? "end" : "via";
   const dotColor =
-    role === "start" ? "#7df09e" : role === "end" ? "#ff6b82" : "#d4ff38";
+    role === "start"
+      ? COLOR_START
+      : role === "end"
+        ? COLOR_END
+        : pastelForWaypoint(id, index);
   return (
     <div className="flex items-center gap-1.5 rounded-sm border border-[color:var(--hud-border)] bg-[rgba(255,255,255,0.02)] px-1.5 py-1">
       <span

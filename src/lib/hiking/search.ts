@@ -2,6 +2,7 @@ import type { RouteCandidate, Waypoint } from "./types";
 import {
   buildRoutePoints,
   fetchBrouterAlternatives,
+  fetchRoundTripAlternatives,
   type BrouterProfile,
 } from "./routing";
 import { fetchGreenPolygons } from "./overpass";
@@ -65,17 +66,23 @@ export async function computeHikingRoute(
     onScored?: (candidates: RouteCandidate[], notice?: string) => void;
   },
 ): Promise<ComputeResult> {
-  const points = buildRoutePoints(params.waypoints, params.roundTrip);
+  const points = buildRoutePoints(params.waypoints);
   if (!points) {
     throw new Error("Add at least two waypoints to compute a route.");
   }
 
-  const alts = await fetchBrouterAlternatives({
-    points,
-    profile: params.profile,
-    maxAlternatives: 3,
-    signal: params.signal,
-  });
+  const alts = params.roundTrip
+    ? await fetchRoundTripAlternatives({
+        waypoints: params.waypoints,
+        profile: params.profile,
+        signal: params.signal,
+      })
+    : await fetchBrouterAlternatives({
+        points,
+        profile: params.profile,
+        maxAlternatives: 3,
+        signal: params.signal,
+      });
 
   if (alts.length === 0) throw new Error("BRouter returned no route.");
 
