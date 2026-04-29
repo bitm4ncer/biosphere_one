@@ -764,10 +764,33 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       (window as unknown as { __map: MLMap }).__map = map;
     }
 
+    // MapLibre sometimes leaves stale tile-load promises behind after a
+    // setStyle swap; the rejected promise tries to read `.signal` off a
+    // freed source and surfaces here as an unhandledrejection. They are
+    // harmless (the new style has already replaced everything), so we
+    // suppress them at the window level just like the in-map error
+    // listener above does for the `error` event.
+    const onUnhandled = (e: PromiseRejectionEvent) => {
+      const reason = e.reason as { message?: string; name?: string } | null;
+      const msg = reason?.message ?? "";
+      const name = reason?.name ?? "";
+      if (
+        name === "AbortError" ||
+        msg.includes("reading 'signal'") ||
+        msg.includes("Failed to fetch") ||
+        msg.includes("AJAXError") ||
+        msg.includes("aborted")
+      ) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("unhandledrejection", onUnhandled);
+
     const resizeObserver = new ResizeObserver(() => map.resize());
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      window.removeEventListener("unhandledrejection", onUnhandled);
       resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
