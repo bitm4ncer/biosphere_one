@@ -7,7 +7,8 @@ import {
   BASEMAPS,
   DEFAULT_IMAGE_BASEMAP_ID,
   DEFAULT_VECTOR_BASEMAP_ID,
-  GIBS_TODAY_DATE_PLACEHOLDER,
+  getActiveVariant,
+  resolveBasemapUrl,
   type Basemap,
 } from "@/lib/basemaps";
 import { useSettings, type BasemapMode, type OverlayKind } from "@/lib/settings";
@@ -20,7 +21,6 @@ import type { GeocodeResult } from "@/lib/geocode";
 import {
   gibsDateNDaysAgo,
   gibsTileUrl,
-  gibsYesterday,
   type GibsLayer,
 } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
@@ -38,7 +38,8 @@ import { useHikingLayers } from "./hiking/useHikingLayers";
 const CLOUDS_DAYS_BACK = 7;
 const CLOUDS_ANIM_INTERVAL_MS = 900;
 const CLOUDS_COMPOSITE_LAYERS: GibsLayer[] = [
-  "VIIRS_SNPP_CorrectedReflectance_TrueColor",
+  // VIIRS NOAA-20 — primary daily true-color since SNPP went offline March 2026.
+  "VIIRS_NOAA20_CorrectedReflectance_TrueColor",
 ];
 
 const OVERLAY_SOURCE_ID = "timeline-overlay";
@@ -86,22 +87,13 @@ interface Props {
   onOpenSettings?: () => void;
 }
 
-function resolveBasemapUrl(url: string): string {
-  if (url.includes(GIBS_TODAY_DATE_PLACEHOLDER)) {
-    // GIBS imagery is reliably available for yesterday UTC; today is sometimes
-    // partial during the day as orbits accumulate.
-    return url.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsYesterday());
-  }
-  return url;
-}
-
-function rasterStyle(basemap: Basemap) {
+function rasterStyle(basemap: Basemap, variantId?: string) {
   return {
     version: 8 as const,
     sources: {
       base: {
         type: "raster" as const,
-        tiles: [resolveBasemapUrl(basemap.url)],
+        tiles: [resolveBasemapUrl(basemap, variantId)],
         tileSize: basemap.tileSize ?? 256,
         attribution: basemap.attribution,
         maxzoom: basemap.maxzoom ?? 18,
@@ -111,9 +103,9 @@ function rasterStyle(basemap: Basemap) {
   };
 }
 
-function applyBasemap(map: MLMap, basemap: Basemap) {
+function applyBasemap(map: MLMap, basemap: Basemap, variantId?: string) {
   if (basemap.kind === "raster") {
-    map.setStyle(rasterStyle(basemap));
+    map.setStyle(rasterStyle(basemap, variantId));
   } else {
     map.setStyle(basemap.url);
   }
@@ -635,6 +627,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     imageBasemapId,
     vectorBasemapId,
     basemapMode,
+    basemapVariants,
     projection,
     activeOverlay,
     weatherOpacity,
@@ -645,6 +638,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     setImageBasemapId,
     setVectorBasemapId,
     setBasemapMode,
+    setBasemapVariant,
     setProjection,
     setActiveOverlay,
     setWeatherOpacity,
@@ -655,6 +649,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   } = useSettings();
   const active =
     basemapMode === "vector" ? vectorBasemapId : imageBasemapId;
+  const activeVariantId = basemapVariants[active];
   const weatherOn = activeOverlay === "clouds";
   const railwayOn = activeOverlay === "rail";
   const firesOn = activeOverlay === "fires";
@@ -702,9 +697,13 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     if (!containerRef.current || mapRef.current) return;
 
     const initial = BASEMAPS.find((b) => b.id === active) ?? BASEMAPS[0];
+    const initialVariantId = basemapVariants[initial.id];
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: initial.kind === "raster" ? rasterStyle(initial) : initial.url,
+      style:
+        initial.kind === "raster"
+          ? rasterStyle(initial, initialVariantId)
+          : initial.url,
       center: view.center,
       zoom: view.zoom,
       minZoom: 2,
@@ -780,7 +779,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     if (!map) return;
     const basemap = BASEMAPS.find((b) => b.id === active);
     if (!basemap) return;
-    applyBasemap(map, basemap);
+    applyBasemap(map, basemap, activeVariantId);
 
     const reapply = () => {
       map.setProjection({ type: projection });
@@ -794,7 +793,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       map.once("load", reapply);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [active, activeVariantId]);
 
   // Toggle the hybrid labels overlay when only the mode changes (no style swap).
   useEffect(() => {
@@ -1555,6 +1554,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                   imageId={imageBasemapId}
                   vectorId={vectorBasemapId}
                   mode={basemapMode}
+                  variants={basemapVariants}
                   onSelectImage={(id) => {
                     setImageBasemapId(id);
                     if (basemapMode === "vector") setBasemapMode("photo");
@@ -1563,6 +1563,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                     setVectorBasemapId(id);
                     if (basemapMode !== "vector") setBasemapMode("vector");
                   }}
+                  onSelectVariant={setBasemapVariant}
                 />
 
                 <OverlayPanel
@@ -1616,16 +1617,20 @@ interface BasemapPanelProps {
   imageId: string;
   vectorId: string;
   mode: BasemapMode;
+  variants: Record<string, string>;
   onSelectImage: (id: string) => void;
   onSelectVector: (id: string) => void;
+  onSelectVariant: (basemapId: string, variantId: string) => void;
 }
 
 function BasemapPanel({
   imageId,
   vectorId,
   mode,
+  variants,
   onSelectImage,
   onSelectVector,
+  onSelectVariant,
 }: BasemapPanelProps) {
   const imageMaps = BASEMAPS.filter((b) => b.category === "photo");
   const vectorMaps = BASEMAPS.filter((b) => b.category === "vector");
@@ -1658,18 +1663,27 @@ function BasemapPanel({
         <div className="flex flex-col gap-0.5">
           {items.map((b) => {
             const selected = effectiveId === b.id;
+            const variant = getActiveVariant(b, variants[b.id]);
             return (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => onSelect(b.id)}
-                data-active={selected}
-                data-live={selected && isLive}
-                className="hud-basemap-btn"
-                aria-pressed={selected}
-              >
-                {b.label}
-              </button>
+              <div key={b.id} className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => onSelect(b.id)}
+                  data-active={selected}
+                  data-live={selected && isLive}
+                  className="hud-basemap-btn"
+                  aria-pressed={selected}
+                >
+                  {variant ? `${b.label} · ${variant.label}` : b.label}
+                </button>
+                {selected && b.variants && (
+                  <VariantChips
+                    basemap={b}
+                    selectedId={variant?.id ?? b.variants.defaultId}
+                    onSelect={(vid) => onSelectVariant(b.id, vid)}
+                  />
+                )}
+              </div>
             );
           })}
         </div>
@@ -1698,6 +1712,42 @@ function BasemapPanel({
         )}
       </div>
     </HudPanel>
+  );
+}
+
+function VariantChips({
+  basemap,
+  selectedId,
+  onSelect,
+}: {
+  basemap: Basemap;
+  selectedId: string;
+  onSelect: (variantId: string) => void;
+}) {
+  if (!basemap.variants) return null;
+  return (
+    <div
+      className="hud-variant-chips no-scrollbar"
+      role="radiogroup"
+      aria-label={`${basemap.label} variants`}
+    >
+      {basemap.variants.options.map((v) => {
+        const active = v.id === selectedId;
+        return (
+          <button
+            key={v.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onSelect(v.id)}
+            data-active={active}
+            className="hud-variant-chip"
+          >
+            {v.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

@@ -1,4 +1,20 @@
+import { gibsYesterday } from "./gibs";
+
 export type BasemapCategory = "photo" | "vector";
+
+export interface BasemapVariant {
+  id: string;
+  label: string;
+  /** Substituted into the URL where the placeholder appears. */
+  urlValue: string;
+}
+
+export interface BasemapVariantSpec {
+  /** String in the basemap URL that gets replaced (e.g. "${year}"). */
+  placeholder: string;
+  options: BasemapVariant[];
+  defaultId: string;
+}
 
 export interface Basemap {
   id: string;
@@ -9,6 +25,8 @@ export interface Basemap {
   maxzoom?: number;
   attribution: string;
   tileSize?: number;
+  /** Optional run-time URL parameters (e.g. year, date). */
+  variants?: BasemapVariantSpec;
 }
 
 const EOX_ATTRIB =
@@ -28,11 +46,10 @@ const OSM_ATTRIB =
 
 const OPENTOPO_ATTRIB = `${OSM_ATTRIB}, SRTM | © <a href="https://opentopomap.org/" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)`;
 
-/**
- * Special placeholder in a basemap URL that the renderer replaces with the
- * most recent date NASA GIBS reliably has imagery for (yesterday UTC).
- */
+/** Special placeholder replaced at render time with yesterday's UTC date. */
 export const GIBS_TODAY_DATE_PLACEHOLDER = "__GIBS_TODAY__";
+
+const S2_YEARS = [2024, 2023, 2022, 2021, 2020, 2019, 2018];
 
 export const BASEMAPS: Basemap[] = [
   {
@@ -40,72 +57,28 @@ export const BASEMAPS: Basemap[] = [
     label: "NASA GIBS Today",
     kind: "raster",
     category: "photo",
-    url: `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${GIBS_TODAY_DATE_PLACEHOLDER}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
+    // NOAA-20 VIIRS — primary daily true-color since SNPP went offline in March 2026.
+    url: `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_CorrectedReflectance_TrueColor/default/${GIBS_TODAY_DATE_PLACEHOLDER}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
     maxzoom: 9,
-    attribution: `${GIBS_ATTRIB} · VIIRS SNPP True Color · ~250 m, daily`,
+    attribution: `${GIBS_ATTRIB} · VIIRS NOAA-20 True Color · ~250 m, daily`,
   },
   {
-    id: "s2cloudless-2024",
-    label: "Sentinel-2 · 2024",
+    id: "s2cloudless",
+    label: "Sentinel-2",
     kind: "raster",
     category: "photo",
-    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg",
+    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-${year}_3857/default/g/{z}/{y}/{x}.jpg",
     maxzoom: 15,
-    attribution: `${EOX_ATTRIB} 2024`,
-  },
-  {
-    id: "s2cloudless-2023",
-    label: "Sentinel-2 · 2023",
-    kind: "raster",
-    category: "photo",
-    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2023_3857/default/g/{z}/{y}/{x}.jpg",
-    maxzoom: 15,
-    attribution: `${EOX_ATTRIB} 2023`,
-  },
-  {
-    id: "s2cloudless-2022",
-    label: "Sentinel-2 · 2022",
-    kind: "raster",
-    category: "photo",
-    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2022_3857/default/g/{z}/{y}/{x}.jpg",
-    maxzoom: 15,
-    attribution: `${EOX_ATTRIB} 2022`,
-  },
-  {
-    id: "s2cloudless-2021",
-    label: "Sentinel-2 · 2021",
-    kind: "raster",
-    category: "photo",
-    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2021_3857/default/g/{z}/{y}/{x}.jpg",
-    maxzoom: 15,
-    attribution: `${EOX_ATTRIB} 2021`,
-  },
-  {
-    id: "s2cloudless-2020",
-    label: "Sentinel-2 · 2020",
-    kind: "raster",
-    category: "photo",
-    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg",
-    maxzoom: 15,
-    attribution: `${EOX_ATTRIB} 2020`,
-  },
-  {
-    id: "s2cloudless-2019",
-    label: "Sentinel-2 · 2019",
-    kind: "raster",
-    category: "photo",
-    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2019_3857/default/g/{z}/{y}/{x}.jpg",
-    maxzoom: 15,
-    attribution: `${EOX_ATTRIB} 2019`,
-  },
-  {
-    id: "s2cloudless-2018",
-    label: "Sentinel-2 · 2018",
-    kind: "raster",
-    category: "photo",
-    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2018_3857/default/g/{z}/{y}/{x}.jpg",
-    maxzoom: 15,
-    attribution: `${EOX_ATTRIB} 2018`,
+    attribution: EOX_ATTRIB,
+    variants: {
+      placeholder: "${year}",
+      options: S2_YEARS.map((y) => ({
+        id: String(y),
+        label: String(y),
+        urlValue: String(y),
+      })),
+      defaultId: "2024",
+    },
   },
   {
     id: "esri-imagery",
@@ -172,5 +145,41 @@ export const BASEMAPS: Basemap[] = [
   },
 ];
 
-export const DEFAULT_IMAGE_BASEMAP_ID = "s2cloudless-2024";
+export const DEFAULT_IMAGE_BASEMAP_ID = "s2cloudless";
 export const DEFAULT_VECTOR_BASEMAP_ID = "voyager";
+
+export function getActiveVariant(
+  basemap: Basemap,
+  variantId: string | undefined,
+): BasemapVariant | null {
+  if (!basemap.variants) return null;
+  const list = basemap.variants.options;
+  return (
+    list.find((v) => v.id === variantId) ??
+    list.find((v) => v.id === basemap.variants!.defaultId) ??
+    list[0] ??
+    null
+  );
+}
+
+/**
+ * Build the final tile URL for a basemap, substituting any dynamic
+ * placeholders (variants like ${year}, time-based __GIBS_TODAY__).
+ */
+export function resolveBasemapUrl(
+  basemap: Basemap,
+  variantId?: string,
+): string {
+  let url = basemap.url;
+  if (basemap.variants) {
+    const variant = getActiveVariant(basemap, variantId);
+    if (variant) {
+      url = url.replaceAll(basemap.variants.placeholder, variant.urlValue);
+    }
+  }
+  if (url.includes(GIBS_TODAY_DATE_PLACEHOLDER)) {
+    url = url.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsYesterday());
+  }
+  return url;
+}
+

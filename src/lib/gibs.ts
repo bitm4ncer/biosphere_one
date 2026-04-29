@@ -1,7 +1,8 @@
 export type GibsLayer =
   | "MODIS_Terra_CorrectedReflectance_TrueColor"
   | "MODIS_Aqua_CorrectedReflectance_TrueColor"
-  | "VIIRS_SNPP_CorrectedReflectance_TrueColor"
+  | "VIIRS_NOAA20_CorrectedReflectance_TrueColor"
+  | "VIIRS_NOAA21_CorrectedReflectance_TrueColor"
   | "VIIRS_SNPP_Thermal_Anomalies_375m_All"
   | "VIIRS_NOAA20_Thermal_Anomalies_375m_All"
   | "MODIS_Terra_NDVI_8Day"

@@ -18,6 +18,8 @@ export interface Settings {
   imageBasemapId: string;
   vectorBasemapId: string;
   basemapMode: BasemapMode;
+  /** Per-basemap-id variant selection (e.g. Sentinel-2 year). */
+  basemapVariants: Record<string, string>;
   projection: Projection;
   activeOverlay: OverlayKind | null;
   weatherOpacity: number;
@@ -28,6 +30,7 @@ export interface Settings {
   setImageBasemapId: (id: string) => void;
   setVectorBasemapId: (id: string) => void;
   setBasemapMode: (mode: BasemapMode) => void;
+  setBasemapVariant: (basemapId: string, variantId: string) => void;
   setProjection: (p: Projection) => void;
   setActiveOverlay: (kind: OverlayKind | null) => void;
   setWeatherOpacity: (o: number) => void;
@@ -43,6 +46,7 @@ export const useSettings = create<Settings>()(
       imageBasemapId: DEFAULT_IMAGE_BASEMAP_ID,
       vectorBasemapId: DEFAULT_VECTOR_BASEMAP_ID,
       basemapMode: "photo",
+      basemapVariants: {},
       projection: "mercator",
       activeOverlay: null,
       weatherOpacity: 0.8,
@@ -53,6 +57,10 @@ export const useSettings = create<Settings>()(
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
       setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
       setBasemapMode: (mode) => set({ basemapMode: mode }),
+      setBasemapVariant: (basemapId, variantId) =>
+        set((s) => ({
+          basemapVariants: { ...s.basemapVariants, [basemapId]: variantId },
+        })),
       setProjection: (p) => set({ projection: p }),
       setActiveOverlay: (kind) => set({ activeOverlay: kind }),
       setWeatherOpacity: (o) => set({ weatherOpacity: o }),
@@ -63,12 +71,13 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 7,
+      version: 8,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
         vectorBasemapId: state.vectorBasemapId,
         basemapMode: state.basemapMode,
+        basemapVariants: state.basemapVariants,
         projection: state.projection,
         activeOverlay: state.activeOverlay,
         weatherOpacity: state.weatherOpacity,
@@ -108,13 +117,25 @@ export const useSettings = create<Settings>()(
             p.basemapMode = "vector";
             if (typeof p.imageBasemapId !== "string") p.imageBasemapId = DEFAULT_IMAGE_BASEMAP_ID;
           } else {
-            // Photo, unknown id, or missing → treat as image.
             p.imageBasemapId = old?.id ?? DEFAULT_IMAGE_BASEMAP_ID;
             p.basemapMode = "photo";
             if (typeof p.vectorBasemapId !== "string") p.vectorBasemapId = DEFAULT_VECTOR_BASEMAP_ID;
           }
           delete p.basemapId;
         }
+        // v7 → v8: collapse "s2cloudless-YYYY" into "s2cloudless" + variant year.
+        if (typeof p.basemapVariants !== "object" || p.basemapVariants === null) {
+          p.basemapVariants = {};
+        }
+        const variants = p.basemapVariants as Record<string, string>;
+        const s2match = typeof p.imageBasemapId === "string"
+          ? p.imageBasemapId.match(/^s2cloudless-(\d{4})$/)
+          : null;
+        if (s2match) {
+          variants["s2cloudless"] = s2match[1];
+          p.imageBasemapId = "s2cloudless";
+        }
+
         if (typeof p.imageBasemapId !== "string") p.imageBasemapId = DEFAULT_IMAGE_BASEMAP_ID;
         if (typeof p.vectorBasemapId !== "string") p.vectorBasemapId = DEFAULT_VECTOR_BASEMAP_ID;
         if (

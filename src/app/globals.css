@@ -491,6 +491,55 @@ input[type="range"].hud-slider::-moz-range-thumb {
   background: rgba(212, 255, 56, 0.22);
 }
 
+/* ── Variant chip row (e.g. Sentinel-2 year picker) ─────────────────── */
+.hud-variant-chips {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 6px 8px 6px 12px;
+  margin-left: 2px;
+  border-left: 2px solid var(--hud-accent);
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+.hud-variant-chip {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--hud-text-muted);
+  background: transparent;
+  border: 1px solid var(--hud-border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+  min-height: 26px;
+}
+
+.hud-variant-chip:hover {
+  color: var(--hud-text);
+  border-color: var(--hud-border-strong);
+}
+
+.hud-variant-chip[data-active="true"] {
+  color: var(--hud-accent);
+  background: var(--hud-accent-soft);
+  border-color: var(--hud-border-strong);
+  text-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
 /* ── Basemap mode switch (image / hybrid / vector) on the main map ──── */
 .hud-basemap-switch {
   display: inline-flex;
