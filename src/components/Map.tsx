@@ -27,6 +27,11 @@ import {
 } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { fetchRailNetwork } from "@/lib/hiking/overpass";
+import {
+  railTileGet,
+  railTilePurgeExpired,
+  railTileSet,
+} from "@/lib/hiking/railTileStore";
 import { useHiking } from "@/lib/hiking/store";
 import { useLongPress } from "./hiking/useLongPress";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
@@ -808,6 +813,12 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   useHikingLayers(mapInstance);
   const railNetworkStatus = useRailNetworkStatus();
 
+  // One-shot purge of expired rail tiles on mount. Best-effort, no
+  // blocking on the result.
+  useEffect(() => {
+    railTilePurgeExpired().catch(() => {});
+  }, []);
+
   // Long-press anywhere on the map → drop a waypoint at that location.
   useLongPress(mapInstance, true, useCallback((lng: number, lat: number) => {
     useHiking.getState().addWaypoint({
@@ -1307,28 +1318,53 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
         notifyRailNetworkStatus();
         const ctrl = new AbortController();
         const bbox = railTileBbox(RAIL_TILE_ZOOM, t.x, t.y);
-        fetchRailNetwork(bbox, ctrl.signal)
-          .then(({ lines, stations }) => {
-            railTileCache.set(key, { lines: lines.features, stations });
-            railTileInFlight.delete(key);
-            notifyRailNetworkStatus();
-            renderFromCache();
-            fetchMissingTiles();
-          })
-          .catch((err) => {
-            railTileInFlight.delete(key);
+
+        // Two-tier cache: try IndexedDB first (instant after the user has
+        // visited an area before, even across page reloads). On miss,
+        // fall through to Overpass and persist the result for next time.
+        const handleTile = async () => {
+          let success = false;
+          try {
+            const stored = await railTileGet(key);
+            if (cancelled || ctrl.signal.aborted) return;
+            if (stored) {
+              railTileCache.set(key, {
+                lines: stored.lines,
+                stations: stored.stations,
+              });
+              success = true;
+            } else {
+              const { lines, stations } = await fetchRailNetwork(
+                bbox,
+                ctrl.signal,
+              );
+              if (cancelled || ctrl.signal.aborted) return;
+              railTileCache.set(key, { lines: lines.features, stations });
+              success = true;
+              // Fire-and-forget IDB write; never blocks rendering.
+              railTileSet(key, { lines: lines.features, stations }).catch(
+                () => {},
+              );
+            }
+          } catch (err) {
             if ((err as Error).name === "AbortError") {
-              notifyRailNetworkStatus();
-              return;
+              // silent
+            } else if (isRateLimitError(err)) {
+              railRateLimitedUntil =
+                Date.now() + RAIL_RATE_LIMIT_BACKOFF_MS;
+            } else {
+              console.warn("[rail-network]", err);
             }
-            if (isRateLimitError(err)) {
-              railRateLimitedUntil = Date.now() + RAIL_RATE_LIMIT_BACKOFF_MS;
-              notifyRailNetworkStatus();
-              return;
-            }
+          } finally {
+            railTileInFlight.delete(key);
             notifyRailNetworkStatus();
-            console.warn("[rail-network]", err);
-          });
+            if (success) {
+              renderFromCache();
+              fetchMissingTiles();
+            }
+          }
+        };
+        handleTile();
       }
     };
 
