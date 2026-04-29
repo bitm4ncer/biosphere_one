@@ -28,7 +28,22 @@ const OSM_ATTRIB =
 
 const OPENTOPO_ATTRIB = `${OSM_ATTRIB}, SRTM | © <a href="https://opentopomap.org/" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)`;
 
+/**
+ * Special placeholder in a basemap URL that the renderer replaces with the
+ * most recent date NASA GIBS reliably has imagery for (yesterday UTC).
+ */
+export const GIBS_TODAY_DATE_PLACEHOLDER = "__GIBS_TODAY__";
+
 export const BASEMAPS: Basemap[] = [
+  {
+    id: "gibs-today",
+    label: "NASA GIBS Today",
+    kind: "raster",
+    category: "photo",
+    url: `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_CorrectedReflectance_TrueColor/default/${GIBS_TODAY_DATE_PLACEHOLDER}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg`,
+    maxzoom: 9,
+    attribution: `${GIBS_ATTRIB} · VIIRS SNPP True Color · ~250 m, daily`,
+  },
   {
     id: "s2cloudless-2024",
     label: "Sentinel-2 · 2024",
@@ -48,6 +63,51 @@ export const BASEMAPS: Basemap[] = [
     attribution: `${EOX_ATTRIB} 2023`,
   },
   {
+    id: "s2cloudless-2022",
+    label: "Sentinel-2 · 2022",
+    kind: "raster",
+    category: "photo",
+    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2022_3857/default/g/{z}/{y}/{x}.jpg",
+    maxzoom: 15,
+    attribution: `${EOX_ATTRIB} 2022`,
+  },
+  {
+    id: "s2cloudless-2021",
+    label: "Sentinel-2 · 2021",
+    kind: "raster",
+    category: "photo",
+    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2021_3857/default/g/{z}/{y}/{x}.jpg",
+    maxzoom: 15,
+    attribution: `${EOX_ATTRIB} 2021`,
+  },
+  {
+    id: "s2cloudless-2020",
+    label: "Sentinel-2 · 2020",
+    kind: "raster",
+    category: "photo",
+    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg",
+    maxzoom: 15,
+    attribution: `${EOX_ATTRIB} 2020`,
+  },
+  {
+    id: "s2cloudless-2019",
+    label: "Sentinel-2 · 2019",
+    kind: "raster",
+    category: "photo",
+    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2019_3857/default/g/{z}/{y}/{x}.jpg",
+    maxzoom: 15,
+    attribution: `${EOX_ATTRIB} 2019`,
+  },
+  {
+    id: "s2cloudless-2018",
+    label: "Sentinel-2 · 2018",
+    kind: "raster",
+    category: "photo",
+    url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2018_3857/default/g/{z}/{y}/{x}.jpg",
+    maxzoom: 15,
+    attribution: `${EOX_ATTRIB} 2018`,
+  },
+  {
     id: "esri-imagery",
     label: "Satellite · HD",
     kind: "raster",
@@ -61,9 +121,9 @@ export const BASEMAPS: Basemap[] = [
     label: "Night · Black Marble",
     kind: "raster",
     category: "photo",
-    url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png",
+    url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2023-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png",
     maxzoom: 8,
-    attribution: `${GIBS_ATTRIB} · VIIRS Black Marble (2016)`,
+    attribution: `${GIBS_ATTRIB} · VIIRS Black Marble (2023)`,
   },
   {
     id: "terrain",

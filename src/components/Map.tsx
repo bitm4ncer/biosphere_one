@@ -7,6 +7,7 @@ import {
   BASEMAPS,
   DEFAULT_IMAGE_BASEMAP_ID,
   DEFAULT_VECTOR_BASEMAP_ID,
+  GIBS_TODAY_DATE_PLACEHOLDER,
   type Basemap,
 } from "@/lib/basemaps";
 import { useSettings, type BasemapMode, type OverlayKind } from "@/lib/settings";
@@ -16,7 +17,12 @@ import { searchCatalog, type Snapshot } from "@/lib/sentinel/catalog";
 import type { Bbox, Credentials } from "@/types/sentinel";
 import { SettingsGear } from "./SettingsGear";
 import type { GeocodeResult } from "@/lib/geocode";
-import { gibsDateNDaysAgo, gibsTileUrl, type GibsLayer } from "@/lib/gibs";
+import {
+  gibsDateNDaysAgo,
+  gibsTileUrl,
+  gibsYesterday,
+  type GibsLayer,
+} from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { fetchRailLines, fetchStationsInBbox } from "@/lib/hiking/overpass";
 import { useHiking } from "@/lib/hiking/store";
@@ -80,13 +86,22 @@ interface Props {
   onOpenSettings?: () => void;
 }
 
+function resolveBasemapUrl(url: string): string {
+  if (url.includes(GIBS_TODAY_DATE_PLACEHOLDER)) {
+    // GIBS imagery is reliably available for yesterday UTC; today is sometimes
+    // partial during the day as orbits accumulate.
+    return url.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsYesterday());
+  }
+  return url;
+}
+
 function rasterStyle(basemap: Basemap) {
   return {
     version: 8 as const,
     sources: {
       base: {
         type: "raster" as const,
-        tiles: [basemap.url],
+        tiles: [resolveBasemapUrl(basemap.url)],
         tileSize: basemap.tileSize ?? 256,
         attribution: basemap.attribution,
         maxzoom: basemap.maxzoom ?? 18,
