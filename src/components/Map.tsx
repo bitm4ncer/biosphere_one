@@ -409,15 +409,36 @@ function setRailStationsData(map: MLMap, data: GeoJSON.FeatureCollection) {
 
 // ── Tile-based rail cache ───────────────────────────────────────────────
 // Keyed by slippy-map tile coords at a fixed zoom. Each cached tile is a
-// 40 km × 30 km Overpass response, so any later pan within an
-// already-loaded tile renders instantly from cache.
-const RAIL_TILE_ZOOM = 10;
+// ~80 km × 50 km Overpass response, so any later pan within an
+// already-loaded tile renders instantly from cache. Tile zoom 9 keeps
+// the total request count low (most viewports = 1 tile) at the cost of
+// a bigger response per request, which Overpass handles fine.
+const RAIL_TILE_ZOOM = 9;
+const RAIL_MAX_PARALLEL = 2;
+const RAIL_RATE_LIMIT_BACKOFF_MS = 15_000;
 type RailTileData = {
   lines: GeoJSON.Feature<GeoJSON.LineString>[];
   stations: { id: string; name: string; lat: number; lon: number }[];
 };
 const railTileCache = new Map<string, RailTileData>();
 const railTileInFlight = new Set<string>();
+/**
+ * Timestamp until which we suspend new Overpass queries because a
+ * recent request was rate-limited (429) or had its TCP connection
+ * closed mid-flight (ERR_CONNECTION_CLOSED). Without this guard the
+ * map would re-issue the failing fetch on every moveend, hammering
+ * Overpass and producing the 2-minute "loading" spirals the user saw.
+ */
+let railRateLimitedUntil = 0;
+function isRateLimitError(err: unknown): boolean {
+  const msg = (err as Error)?.message ?? "";
+  return (
+    msg.includes("429") ||
+    msg.includes("CONNECTION_CLOSED") ||
+    msg.includes("Failed to fetch") ||
+    msg.includes("NetworkError")
+  );
+}
 
 function lon2tileX(lon: number, z: number): number {
   return Math.floor(((lon + 180) / 360) * (1 << z));
@@ -1213,14 +1234,23 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     const fetchMissingTiles = () => {
       if (cancelled) return;
       if (map.getZoom() < RAIL_LINES_MIN_ZOOM) return;
+      // Honour the rate-limit cooldown — Overpass needs breathing room
+      // after a 429 or a closed connection.
+      const now = Date.now();
+      if (now < railRateLimitedUntil) {
+        const wait = railRateLimitedUntil - now + 50;
+        window.setTimeout(() => {
+          if (!cancelled) fetchMissingTiles();
+        }, wait);
+        return;
+      }
       const tiles = tilesForBounds(map.getBounds(), RAIL_TILE_ZOOM);
-      // Cap parallel fetches to avoid hitting Overpass rate limits.
       const toFetch = tiles.filter((t) => {
         const key = `${t.x}/${t.y}`;
         return !railTileCache.has(key) && !railTileInFlight.has(key);
       });
-      const MAX_PARALLEL = 4;
-      for (const t of toFetch.slice(0, MAX_PARALLEL)) {
+      const slots = Math.max(0, RAIL_MAX_PARALLEL - railTileInFlight.size);
+      for (const t of toFetch.slice(0, slots)) {
         const key = `${t.x}/${t.y}`;
         railTileInFlight.add(key);
         const ctrl = new AbortController();
@@ -1230,16 +1260,16 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
             railTileCache.set(key, { lines: lines.features, stations });
             railTileInFlight.delete(key);
             renderFromCache();
-            // After this tile finishes, kick off any remaining missing tiles
-            // (we capped parallelism above).
             fetchMissingTiles();
           })
           .catch((err) => {
             railTileInFlight.delete(key);
             if ((err as Error).name === "AbortError") return;
-            const msg = (err as Error).message ?? "";
-            if (!msg.includes("429")) console.warn("[rail-network]", err);
-            // Retry-on-pan; do not poison cache.
+            if (isRateLimitError(err)) {
+              railRateLimitedUntil = Date.now() + RAIL_RATE_LIMIT_BACKOFF_MS;
+              return;
+            }
+            console.warn("[rail-network]", err);
           });
       }
     };
