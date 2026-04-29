@@ -7,13 +7,12 @@ import {
   BASEMAPS,
   DEFAULT_IMAGE_BASEMAP_ID,
   DEFAULT_VECTOR_BASEMAP_ID,
-  type BasemapCategory,
 } from "./basemaps";
 
 export type Projection = "mercator" | "globe";
 export type OverlayKind = "clouds" | "rail" | "fires" | "ndvi";
 export type RailStyle = "tiles" | "lines";
-export type BasemapMode = BasemapCategory; // "photo" | "vector"
+export type BasemapMode = "photo" | "hybrid" | "vector";
 
 export interface Settings {
   imageBasemapId: string;
@@ -29,7 +28,6 @@ export interface Settings {
   setImageBasemapId: (id: string) => void;
   setVectorBasemapId: (id: string) => void;
   setBasemapMode: (mode: BasemapMode) => void;
-  toggleBasemapMode: () => void;
   setProjection: (p: Projection) => void;
   setActiveOverlay: (kind: OverlayKind | null) => void;
   setWeatherOpacity: (o: number) => void;
@@ -55,8 +53,6 @@ export const useSettings = create<Settings>()(
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
       setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
       setBasemapMode: (mode) => set({ basemapMode: mode }),
-      toggleBasemapMode: () =>
-        set((s) => ({ basemapMode: s.basemapMode === "photo" ? "vector" : "photo" })),
       setProjection: (p) => set({ projection: p }),
       setActiveOverlay: (kind) => set({ activeOverlay: kind }),
       setWeatherOpacity: (o) => set({ weatherOpacity: o }),
@@ -121,7 +117,13 @@ export const useSettings = create<Settings>()(
         }
         if (typeof p.imageBasemapId !== "string") p.imageBasemapId = DEFAULT_IMAGE_BASEMAP_ID;
         if (typeof p.vectorBasemapId !== "string") p.vectorBasemapId = DEFAULT_VECTOR_BASEMAP_ID;
-        if (p.basemapMode !== "photo" && p.basemapMode !== "vector") p.basemapMode = "photo";
+        if (
+          p.basemapMode !== "photo" &&
+          p.basemapMode !== "hybrid" &&
+          p.basemapMode !== "vector"
+        ) {
+          p.basemapMode = "photo";
+        }
         return p;
       },
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import maplibregl, { Map as MLMap, ScaleControl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
@@ -47,6 +47,16 @@ const FIRES_SOURCE_ID = "fires";
 const FIRES_LAYER_ID = "fires-layer";
 const NDVI_SOURCE_ID = "ndvi";
 const NDVI_LAYER_ID = "ndvi-layer";
+const HYBRID_LABELS_SOURCE_ID = "hybrid-labels";
+const HYBRID_LABELS_LAYER_ID = "hybrid-labels-layer";
+const HYBRID_LABELS_TILE_URLS = [
+  "https://a.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
+  "https://b.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
+  "https://c.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
+  "https://d.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png",
+];
+const HYBRID_LABELS_ATTRIB =
+  '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>';
 
 interface ViewState {
   center: [number, number];
@@ -88,6 +98,29 @@ function applyBasemap(map: MLMap, basemap: Basemap) {
   } else {
     map.setStyle(basemap.url);
   }
+}
+
+function addHybridLabels(map: MLMap) {
+  if (map.getLayer(HYBRID_LABELS_LAYER_ID)) return;
+  if (!map.getSource(HYBRID_LABELS_SOURCE_ID)) {
+    map.addSource(HYBRID_LABELS_SOURCE_ID, {
+      type: "raster",
+      tiles: HYBRID_LABELS_TILE_URLS,
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: HYBRID_LABELS_ATTRIB,
+    });
+  }
+  map.addLayer({
+    id: HYBRID_LABELS_LAYER_ID,
+    type: "raster",
+    source: HYBRID_LABELS_SOURCE_ID,
+  });
+}
+
+function removeHybridLabels(map: MLMap) {
+  if (map.getLayer(HYBRID_LABELS_LAYER_ID)) map.removeLayer(HYBRID_LABELS_LAYER_ID);
+  if (map.getSource(HYBRID_LABELS_SOURCE_ID)) map.removeSource(HYBRID_LABELS_SOURCE_ID);
 }
 
 const WEATHER_MAXZOOM = 7;
@@ -487,7 +520,6 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     setImageBasemapId,
     setVectorBasemapId,
     setBasemapMode,
-    toggleBasemapMode,
     setProjection,
     setActiveOverlay,
     setWeatherOpacity,
@@ -619,6 +651,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       map.setProjection({ type: projection });
       if (sector) setSectorOutline(map, sector);
       if (overlayUrl && sector) setOverlay(map, overlayUrl, sector, overlayOpacity);
+      if (basemapMode === "hybrid") addHybridLabels(map);
     };
     if (map.isStyleLoaded()) {
       setTimeout(reapply, 0);
@@ -627,6 +660,18 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  // Toggle the hybrid labels overlay when only the mode changes (no style swap).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      if (basemapMode === "hybrid") addHybridLabels(map);
+      else removeHybridLabels(map);
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("idle", apply);
+  }, [basemapMode]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1180,18 +1225,8 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* image/vector basemap switch (top-left of map) */}
-      <BasemapSwitch
-        mode={basemapMode}
-        onModeChange={setBasemapMode}
-        onToggle={toggleBasemapMode}
-        imageLabel={
-          BASEMAPS.find((b) => b.id === imageBasemapId)?.label ?? "Image"
-        }
-        vectorLabel={
-          BASEMAPS.find((b) => b.id === vectorBasemapId)?.label ?? "Vector"
-        }
-      />
+      {/* image / hybrid / vector basemap switch (top-left of map) */}
+      <BasemapSwitch mode={basemapMode} onModeChange={setBasemapMode} />
 
       {/* geolocate status banner (diagnostic — bottom center, above scale) */}
       {(geoStatus || geoHeading) && (
@@ -1284,11 +1319,11 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                   mode={basemapMode}
                   onSelectImage={(id) => {
                     setImageBasemapId(id);
-                    setBasemapMode("photo");
+                    if (basemapMode === "vector") setBasemapMode("photo");
                   }}
                   onSelectVector={(id) => {
                     setVectorBasemapId(id);
-                    setBasemapMode("vector");
+                    if (basemapMode !== "vector") setBasemapMode("vector");
                   }}
                 />
 
@@ -1411,7 +1446,7 @@ function BasemapPanel({
           "Image Maps",
           imageMaps,
           imageId,
-          mode === "photo",
+          mode === "photo" || mode === "hybrid",
           onSelectImage,
           DEFAULT_IMAGE_BASEMAP_ID,
         )}
@@ -1431,18 +1466,74 @@ function BasemapPanel({
 interface BasemapSwitchProps {
   mode: BasemapMode;
   onModeChange: (mode: BasemapMode) => void;
-  onToggle: () => void;
-  imageLabel: string;
-  vectorLabel: string;
 }
 
-function BasemapSwitch({
-  mode,
-  onModeChange,
-  onToggle,
-  imageLabel,
-  vectorLabel,
-}: BasemapSwitchProps) {
+const SEGMENTS: { key: BasemapMode; label: string; icon: ReactNode }[] = [
+  {
+    key: "photo",
+    label: "Image",
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <rect x="3" y="5" width="18" height="14" rx="1.5" />
+        <circle cx="8.5" cy="10" r="1.4" />
+        <path d="M3 17 L9 12 L13 16 L17 12 L21 17" />
+      </svg>
+    ),
+  },
+  {
+    key: "hybrid",
+    label: "Hybrid",
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M12 3 L21 8 L12 13 L3 8 Z" />
+        <path d="M3 14 L12 19 L21 14" />
+      </svg>
+    ),
+  },
+  {
+    key: "vector",
+    label: "Vector",
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M9 4 L3 6 V20 L9 18 L15 20 L21 18 V4 L15 6 Z" />
+        <line x1="9" y1="4" x2="9" y2="18" />
+        <line x1="15" y1="6" x2="15" y2="20" />
+      </svg>
+    ),
+  },
+];
+
+function BasemapSwitch({ mode, onModeChange }: BasemapSwitchProps) {
   return (
     <div className="pointer-events-auto absolute left-3 top-3 z-10">
       <div
@@ -1450,52 +1541,20 @@ function BasemapSwitch({
         role="group"
         aria-label="Basemap mode"
       >
-        <span className="hud-corner-tr" aria-hidden />
-        <span className="hud-corner-br" aria-hidden />
-        <button
-          type="button"
-          onClick={() => onModeChange("photo")}
-          data-active={mode === "photo"}
-          className="hud-basemap-switch-btn"
-          aria-pressed={mode === "photo"}
-          title={imageLabel}
-        >
-          <span className="hud-basemap-switch-label">Image</span>
-          <span className="hud-basemap-switch-sub">{imageLabel}</span>
-        </button>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="hud-basemap-switch-toggle"
-          aria-label={`Switch to ${mode === "photo" ? "vector" : "image"} map`}
-          title="Toggle image / vector"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
+        {SEGMENTS.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => onModeChange(s.key)}
+            data-active={mode === s.key}
+            className="hud-basemap-switch-btn"
+            aria-pressed={mode === s.key}
+            aria-label={s.label}
+            title={s.label}
           >
-            <path d="M7 7h13l-3-3" />
-            <path d="M17 17H4l3 3" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => onModeChange("vector")}
-          data-active={mode === "vector"}
-          className="hud-basemap-switch-btn"
-          aria-pressed={mode === "vector"}
-          title={vectorLabel}
-        >
-          <span className="hud-basemap-switch-label">Vector</span>
-          <span className="hud-basemap-switch-sub">{vectorLabel}</span>
-        </button>
+            {s.icon}
+          </button>
+        ))}
       </div>
     </div>
   );
