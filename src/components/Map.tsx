@@ -22,6 +22,7 @@ import type { GeocodeResult } from "@/lib/geocode";
 import {
   gibsDateNDaysAgo,
   gibsTileUrl,
+  gibsYesterday,
   type GibsLayer,
 } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
@@ -94,7 +95,8 @@ function rasterStyle(basemap: Basemap, variantId?: string) {
     // Glyphs are required for any symbol layer with `text-field` (station
     // names, waypoint numbers, etc.) we add on top. Raster basemaps would
     // otherwise have no glyphs source and labels render blank.
-    glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
+    glyphs:
+      "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf",
     sources: {
       base: {
         type: "raster" as const,
@@ -456,64 +458,48 @@ function removeGibsOverlay(map: MLMap, sourceId: string, layerId: string) {
 }
 
 const FIRES_ATTRIBUTION =
-  '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · GOES-East/West ABI Fire Temperature';
+  '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · VIIRS NOAA-20 Thermal Anomalies (375 m, daily, global)';
 
 const NDVI_ATTRIBUTION =
   '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · MODIS Terra NDVI 8-day';
 
-// GOES-East + GOES-West ABI FireTemp — raster PNG, EPSG:3857, 10-minute
-// interval, keyless. Together they cover the Americas and the Pacific;
-// Europe / Africa / Asia are outside geostationary fire sensor range
-// (those regions need FIRMS which requires a MAP_KEY — deferred).
-const FIRES_MAX_ZOOM = 7;
-const FIRES_EAST_SOURCE_ID = `${FIRES_SOURCE_ID}-east`;
-const FIRES_WEST_SOURCE_ID = `${FIRES_SOURCE_ID}-west`;
-const FIRES_EAST_LAYER_ID = `${FIRES_LAYER_ID}-east`;
-const FIRES_WEST_LAYER_ID = `${FIRES_LAYER_ID}-west`;
-const FIRES_EAST_URL =
-  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_FireTemp/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png";
-const FIRES_WEST_URL =
-  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-West_ABI_FireTemp/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png";
+// VIIRS NOAA-20 Thermal Anomalies — daily, global, no key. Replaces the
+// old GOES-East/West FireTemp pair which was broken (URL missing TIME
+// segment) and limited to the Americas. VIIRS gives daily coverage of
+// every fire on the planet, including Europe / Africa / Asia.
+const FIRES_MAX_ZOOM = 9;
+
+function firesTileUrl(): string {
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_Thermal_Anomalies_375m_All/default/${gibsYesterday()}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`;
+}
 
 function ensureFiresLayer(map: MLMap, opacity: number) {
-  if (map.getLayer(FIRES_EAST_LAYER_ID)) return;
-  [
-    [FIRES_EAST_SOURCE_ID, FIRES_EAST_LAYER_ID, FIRES_EAST_URL],
-    [FIRES_WEST_SOURCE_ID, FIRES_WEST_LAYER_ID, FIRES_WEST_URL],
-  ].forEach(([sourceId, layerId, url]) => {
-    if (map.getSource(sourceId)) map.removeSource(sourceId);
-    map.addSource(sourceId, {
-      type: "raster",
-      tiles: [url],
-      tileSize: 256,
-      maxzoom: FIRES_MAX_ZOOM,
-      attribution: FIRES_ATTRIBUTION,
-    });
-    map.addLayer({
-      id: layerId,
-      type: "raster",
-      source: sourceId,
-      maxzoom: FIRES_MAX_ZOOM + 1,
-      paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
-    });
+  if (map.getLayer(FIRES_LAYER_ID)) return;
+  if (map.getSource(FIRES_SOURCE_ID)) map.removeSource(FIRES_SOURCE_ID);
+  map.addSource(FIRES_SOURCE_ID, {
+    type: "raster",
+    tiles: [firesTileUrl()],
+    tileSize: 256,
+    maxzoom: FIRES_MAX_ZOOM,
+    attribution: FIRES_ATTRIBUTION,
+  });
+  map.addLayer({
+    id: FIRES_LAYER_ID,
+    type: "raster",
+    source: FIRES_SOURCE_ID,
+    paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
   });
 }
 
 function updateFiresOpacity(map: MLMap, opacity: number) {
-  [FIRES_EAST_LAYER_ID, FIRES_WEST_LAYER_ID].forEach((layerId) => {
-    if (map.getLayer(layerId)) {
-      map.setPaintProperty(layerId, "raster-opacity", opacity);
-    }
-  });
+  if (map.getLayer(FIRES_LAYER_ID)) {
+    map.setPaintProperty(FIRES_LAYER_ID, "raster-opacity", opacity);
+  }
 }
 
 function removeFiresLayer(map: MLMap) {
-  [FIRES_EAST_LAYER_ID, FIRES_WEST_LAYER_ID].forEach((layerId) => {
-    if (map.getLayer(layerId)) map.removeLayer(layerId);
-  });
-  [FIRES_EAST_SOURCE_ID, FIRES_WEST_SOURCE_ID].forEach((sourceId) => {
-    if (map.getSource(sourceId)) map.removeSource(sourceId);
-  });
+  if (map.getLayer(FIRES_LAYER_ID)) map.removeLayer(FIRES_LAYER_ID);
+  if (map.getSource(FIRES_SOURCE_ID)) map.removeSource(FIRES_SOURCE_ID);
 }
 
 function bboxCoordinates(
@@ -719,7 +705,10 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       center: view.center,
       zoom: view.zoom,
       minZoom: 2,
-      maxZoom: 18,
+      // 22 lets Esri imagery overzoom past its native z=17 cap; lower-res
+      // basemaps (S2 at z=15, GIBS at z=9) also stretch when the user
+      // pinches in, instead of clamping at z=18.
+      maxZoom: 22,
       attributionControl: { compact: true },
       hash: true,
     });
@@ -1160,7 +1149,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 
     const debouncedFetch = () => {
       if (timer != null) window.clearTimeout(timer);
-      timer = window.setTimeout(fetchAndSet, 700);
+      timer = window.setTimeout(fetchAndSet, 500);
     };
 
     const apply = () => {

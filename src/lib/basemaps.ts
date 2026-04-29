@@ -60,6 +60,20 @@ const S2_YEARS = [2024, 2023, 2022, 2021, 2020, 2019, 2018];
 
 export const BASEMAPS: Basemap[] = [
   {
+    id: "esri-imagery",
+    label: "Satellite · HD",
+    subtitle: "Esri / Maxar mosaic · sub-meter to 1 m",
+    kind: "raster",
+    category: "photo",
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    // Cap at 17 — the mosaic has higher detail in some urban areas, but
+    // many regions return Esri's "Map data not yet available" error tile
+    // past z=17. Capping makes MapLibre overzoom from z=17 instead so the
+    // user sees imagery (just upscaled) at any zoom level.
+    maxzoom: 17,
+    attribution: ESRI_ATTRIB,
+  },
+  {
     id: "gibs-today",
     label: "Live · Today",
     subtitle: `NOAA-20 VIIRS · ${GIBS_TODAY_DATE_PLACEHOLDER} · 250 m`,
@@ -90,16 +104,6 @@ export const BASEMAPS: Basemap[] = [
     },
   },
   {
-    id: "esri-imagery",
-    label: "Satellite · HD",
-    subtitle: "Esri / Maxar mosaic · sub-meter to 1 m",
-    kind: "raster",
-    category: "photo",
-    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    maxzoom: 19,
-    attribution: ESRI_ATTRIB,
-  },
-  {
     id: "night",
     label: "Night",
     subtitle: "VIIRS Black Marble · 2023 annual composite",
@@ -108,33 +112,6 @@ export const BASEMAPS: Basemap[] = [
     url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2023-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png",
     maxzoom: 8,
     attribution: `${GIBS_ATTRIB} · VIIRS Black Marble (2023)`,
-  },
-  {
-    id: "terrain",
-    label: "Terrain",
-    kind: "raster",
-    category: "vector",
-    url: "https://tiles.maps.eox.at/wmts/1.0.0/terrain-light_3857/default/g/{z}/{y}/{x}.jpg",
-    maxzoom: 11,
-    attribution: EOX_ATTRIB,
-  },
-  {
-    id: "opentopo",
-    label: "Topographic",
-    kind: "raster",
-    category: "vector",
-    url: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
-    maxzoom: 17,
-    attribution: OPENTOPO_ATTRIB,
-  },
-  {
-    id: "voyager",
-    label: "Voyager",
-    kind: "style",
-    category: "vector",
-    url: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-    maxzoom: 19,
-    attribution: CARTO_ATTRIB,
   },
   {
     id: "streets-dark",
@@ -154,10 +131,37 @@ export const BASEMAPS: Basemap[] = [
     maxzoom: 19,
     attribution: CARTO_ATTRIB,
   },
+  {
+    id: "voyager",
+    label: "Voyager",
+    kind: "style",
+    category: "vector",
+    url: "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+    maxzoom: 19,
+    attribution: CARTO_ATTRIB,
+  },
+  {
+    id: "terrain",
+    label: "Terrain",
+    kind: "raster",
+    category: "vector",
+    url: "https://tiles.maps.eox.at/wmts/1.0.0/terrain-light_3857/default/g/{z}/{y}/{x}.jpg",
+    maxzoom: 11,
+    attribution: EOX_ATTRIB,
+  },
+  {
+    id: "opentopo",
+    label: "Topographic",
+    kind: "raster",
+    category: "vector",
+    url: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+    maxzoom: 17,
+    attribution: OPENTOPO_ATTRIB,
+  },
 ];
 
-export const DEFAULT_IMAGE_BASEMAP_ID = "s2cloudless";
-export const DEFAULT_VECTOR_BASEMAP_ID = "voyager";
+export const DEFAULT_IMAGE_BASEMAP_ID = "esri-imagery";
+export const DEFAULT_VECTOR_BASEMAP_ID = "streets-dark";
 
 export function getActiveVariant(
   basemap: Basemap,
