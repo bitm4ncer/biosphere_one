@@ -31,6 +31,11 @@ export const viewport: Viewport = {
   themeColor: "#080a06",
   width: "device-width",
   initialScale: 1,
+  // Disable browser-level pinch zoom of the page itself; MapLibre handles
+  // its own pinch-zoom on the map element. Without this, two-finger gestures
+  // sometimes zoom the page chrome instead of the map on iOS Safari.
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
 };
 

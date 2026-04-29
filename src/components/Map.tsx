@@ -1820,15 +1820,6 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
         </div>
       )}
 
-      {/* mobile tap-to-close layer (fully transparent; no blur/darken) */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-[5] md:hidden"
-          onClick={closeSidebar}
-          aria-hidden
-        />
-      )}
-
       {/* Sidebar — bottom-sheet on mobile, side-drawer on desktop */}
       <aside
         data-sheet-state={
