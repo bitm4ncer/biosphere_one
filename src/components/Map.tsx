@@ -8,6 +8,7 @@ import {
   DEFAULT_IMAGE_BASEMAP_ID,
   DEFAULT_VECTOR_BASEMAP_ID,
   getActiveVariant,
+  resolveBasemapSubtitle,
   resolveBasemapUrl,
   type Basemap,
 } from "@/lib/basemaps";
@@ -1664,6 +1665,7 @@ function BasemapPanel({
           {items.map((b) => {
             const selected = effectiveId === b.id;
             const variant = getActiveVariant(b, variants[b.id]);
+            const subtitle = resolveBasemapSubtitle(b, variants[b.id]);
             return (
               <div key={b.id} className="flex flex-col">
                 <button
@@ -1671,10 +1673,17 @@ function BasemapPanel({
                   onClick={() => onSelect(b.id)}
                   data-active={selected}
                   data-live={selected && isLive}
-                  className="hud-basemap-btn"
+                  className="hud-basemap-btn flex flex-col items-stretch"
                   aria-pressed={selected}
                 >
-                  {variant ? `${b.label} · ${variant.label}` : b.label}
+                  <span className="leading-tight">
+                    {variant ? `${b.label} · ${variant.label}` : b.label}
+                  </span>
+                  {subtitle && (
+                    <span className="hud-basemap-btn-subtitle">
+                      {subtitle}
+                    </span>
+                  )}
                 </button>
                 {selected && b.variants && (
                   <VariantChips

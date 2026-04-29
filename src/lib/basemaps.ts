@@ -19,6 +19,13 @@ export interface BasemapVariantSpec {
 export interface Basemap {
   id: string;
   label: string;
+  /**
+   * Short secondary line shown under the label in the basemap picker.
+   * May embed dynamic placeholders (`__GIBS_TODAY__`, the variant
+   * placeholder) which `resolveBasemapSubtitle` substitutes at render
+   * time.
+   */
+  subtitle?: string;
   kind: "raster" | "style";
   category: BasemapCategory;
   url: string;
@@ -54,7 +61,8 @@ const S2_YEARS = [2024, 2023, 2022, 2021, 2020, 2019, 2018];
 export const BASEMAPS: Basemap[] = [
   {
     id: "gibs-today",
-    label: "NASA GIBS Today",
+    label: "Live · Today",
+    subtitle: `NOAA-20 VIIRS · ${GIBS_TODAY_DATE_PLACEHOLDER} · 250 m`,
     kind: "raster",
     category: "photo",
     // NOAA-20 VIIRS — primary daily true-color since SNPP went offline in March 2026.
@@ -65,6 +73,7 @@ export const BASEMAPS: Basemap[] = [
   {
     id: "s2cloudless",
     label: "Sentinel-2",
+    subtitle: "EOX cloudless mosaic · 10 m · annual",
     kind: "raster",
     category: "photo",
     url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-${year}_3857/default/g/{z}/{y}/{x}.jpg",
@@ -83,6 +92,7 @@ export const BASEMAPS: Basemap[] = [
   {
     id: "esri-imagery",
     label: "Satellite · HD",
+    subtitle: "Esri / Maxar mosaic · sub-meter to 1 m",
     kind: "raster",
     category: "photo",
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -91,7 +101,8 @@ export const BASEMAPS: Basemap[] = [
   },
   {
     id: "night",
-    label: "Night · Black Marble",
+    label: "Night",
+    subtitle: "VIIRS Black Marble · 2023 annual composite",
     kind: "raster",
     category: "photo",
     url: "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2023-01-01/GoogleMapsCompatible_Level8/{z}/{y}/{x}.png",
@@ -181,5 +192,28 @@ export function resolveBasemapUrl(
     url = url.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsYesterday());
   }
   return url;
+}
+
+/**
+ * Resolve the human-readable subtitle for a basemap, with the same
+ * placeholder substitutions used for URLs. Returns null if no subtitle
+ * is configured.
+ */
+export function resolveBasemapSubtitle(
+  basemap: Basemap,
+  variantId?: string,
+): string | null {
+  if (!basemap.subtitle) return null;
+  let s = basemap.subtitle;
+  if (basemap.variants) {
+    const variant = getActiveVariant(basemap, variantId);
+    if (variant) {
+      s = s.replaceAll(basemap.variants.placeholder, variant.label);
+    }
+  }
+  if (s.includes(GIBS_TODAY_DATE_PLACEHOLDER)) {
+    s = s.replaceAll(GIBS_TODAY_DATE_PLACEHOLDER, gibsYesterday());
+  }
+  return s;
 }
 

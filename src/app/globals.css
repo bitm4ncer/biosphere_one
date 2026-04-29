@@ -491,6 +491,24 @@ input[type="range"].hud-slider::-moz-range-thumb {
   background: rgba(212, 255, 56, 0.22);
 }
 
+/* Secondary line under a basemap label (e.g. sensor + date) */
+.hud-basemap-btn-subtitle {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--hud-text-muted);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hud-basemap-btn[data-active="true"] .hud-basemap-btn-subtitle {
+  color: rgba(212, 255, 56, 0.65);
+}
+
 /* ── Variant chip row (e.g. Sentinel-2 year picker) ─────────────────── */
 .hud-variant-chips {
   display: flex;
