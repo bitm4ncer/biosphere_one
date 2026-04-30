@@ -41,10 +41,11 @@ export function ElevationChart({
   return (
     <div className="flex flex-col gap-1">
       <svg
-        width={width}
+        width="100%"
         height={height}
         viewBox={`0 0 ${width} ${height}`}
-        className="block"
+        preserveAspectRatio="none"
+        className="block w-full"
         aria-label="Elevation profile"
       >
         <path
