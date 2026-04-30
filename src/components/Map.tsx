@@ -816,11 +816,28 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const [timelineState, setTimelineState] = useState<TimelineState>({ kind: "idle" });
   const [weatherFrameIndex, setWeatherFrameIndex] = useState(0);
   const [weatherPlaying, setWeatherPlaying] = useState(false);
-  // Debug HUD activation: append `?debug=1` to the URL. Reads once on
-  // mount; flipping the flag at runtime requires a reload.
+  // Debug HUD activation. Triggered by ANY of:
+  //   - URL contains `debug=1` (or just `debug` — the test for any
+  //     truthy value also handles `?debug=1>` typos and `#debug=1`).
+  //   - `localStorage.debug === "1"`. Once enabled via URL, sticks.
+  // To disable: append `?debug=0` or run `localStorage.removeItem("debug")`
+  // and reload.
   const [debugOn] = useState(() => {
     if (typeof window === "undefined") return false;
-    return new URLSearchParams(window.location.search).get("debug") === "1";
+    try {
+      const url = `${window.location.search}${window.location.hash}`;
+      if (/[?&#]debug=0\b/.test(url)) {
+        try { localStorage.removeItem("debug"); } catch {}
+        return false;
+      }
+      if (/[?&#]debug(=[^&]*)?\b/i.test(url)) {
+        try { localStorage.setItem("debug", "1"); } catch {}
+        return true;
+      }
+      return localStorage.getItem("debug") === "1";
+    } catch {
+      return false;
+    }
   });
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [debugTick, setDebugTick] = useState(0);
@@ -3245,8 +3262,7 @@ function DebugHud({
   const weatherLayerOnMap = layerIds.includes("weather-layer");
   return (
     <div
-      className="pointer-events-auto absolute bottom-2 left-2 z-[60] max-w-[92vw] overflow-auto rounded border border-amber-400/50 bg-black/85 p-2 font-mono text-[10px] leading-tight text-amber-100 shadow-lg"
-      style={{ maxHeight: "60vh" }}
+      className="pointer-events-auto fixed left-1 right-1 top-[max(64px,env(safe-area-inset-top,0px))] z-[9999] max-h-[55vh] overflow-auto rounded border-2 border-red-500 bg-black/95 p-2 font-mono text-[10px] leading-tight text-amber-100 shadow-2xl"
     >
       <div className="mb-1 font-semibold text-amber-300">DEBUG HUD · ?debug=0 to hide</div>
       <div>active basemap: {activeOverlayId} (mode={basemapMode}, image={imageBasemapId})</div>
