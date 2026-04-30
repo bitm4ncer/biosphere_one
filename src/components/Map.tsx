@@ -1044,10 +1044,18 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     });
   }, []));
 
-  // Remember whether the user prefers the sheet at half or full when
-  // it opens from peek. Once they expand to full, subsequent opens come
-  // back at full instead of resetting to half.
-  const [preferredOpen, setPreferredOpen] = useState<"half" | "full">("half");
+  // Remember whether the user prefers the sheet at half or full when it
+  // opens from peek. Persisted to localStorage so reopening the app at
+  // a later session also restores the chosen size.
+  const [preferredOpen, setPreferredOpen] = useState<"half" | "full">(() => {
+    if (typeof window === "undefined") return "half";
+    const stored = window.localStorage.getItem("biosphere.preferredOpen");
+    return stored === "full" ? "full" : "half";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("biosphere.preferredOpen", preferredOpen);
+  }, [preferredOpen]);
 
   // Tab tap handling — like Apple/Google Maps. Tapping the active tab
   // collapses the sheet to peek; tapping the other switches pane and
