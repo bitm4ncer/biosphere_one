@@ -767,7 +767,7 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .hud-basemap-btn {
   position: relative;
   padding: 8px 14px;
-  text-align: left;
+  text-align: center;
   font-size: 11px;
   background: transparent;
   color: var(--hud-text);
