@@ -1854,7 +1854,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
           "left-0 right-0 md:left-auto md:right-0",
           "bottom-[var(--hud-nav-h)] md:bottom-0 md:top-0",
           "md:max-w-[340px]",
-          "rounded-t-xl md:rounded-none",
+          "rounded-t-3xl md:rounded-none",
           "border-t md:border-t-0 border-[color:var(--hud-border)]",
           "transition-[transform,height] md:transition-transform",
           "duration-300 md:duration-200 ease-out will-change-transform",

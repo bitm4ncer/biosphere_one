@@ -579,7 +579,7 @@ function WaypointRow({
         ? COLOR_END
         : pastelForWaypoint(id, index);
   return (
-    <div className="flex items-center gap-1.5 rounded-sm border border-[color:var(--hud-border)] bg-[rgba(255,255,255,0.02)] px-1.5 py-1">
+    <div className="flex items-center gap-1.5 rounded-full border border-[color:var(--hud-border)] bg-[rgba(255,255,255,0.02)] px-2 py-1">
       <span
         aria-hidden
         className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-[#0a0a0b]"
@@ -631,7 +631,7 @@ function IconBtn({
       onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel}
-      className="inline-flex h-6 w-6 items-center justify-center rounded-sm text-[color:var(--hud-text-muted)] transition-colors hover:bg-[var(--hud-accent-soft)] hover:text-[color:var(--hud-accent)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[color:var(--hud-text-muted)]"
+      className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[color:var(--hud-text-muted)] transition-colors hover:bg-[var(--hud-accent-soft)] hover:text-[color:var(--hud-accent)] disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[color:var(--hud-text-muted)]"
     >
       {children}
     </button>
@@ -768,7 +768,7 @@ function SearchAdd({
         ? createPortal(
             <div
               data-search-dropdown="true"
-              className="hud-scrollbar fixed z-[1000] max-h-64 overflow-y-auto rounded-sm border border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] shadow-lg backdrop-blur"
+              className="hud-scrollbar fixed z-[1000] max-h-64 overflow-y-auto rounded-2xl border border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] shadow-lg backdrop-blur"
               style={{
                 left: anchor.left,
                 top: anchor.top,

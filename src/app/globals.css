@@ -124,54 +124,23 @@ body {
     );
 }
 
-/* ── HUD panel with corner brackets ──────────────────────────────────── */
+/* ── HUD panel ───────────────────────────────────────────────────────── */
 .hud-panel {
   position: relative;
   background: var(--hud-surface);
   border: 1px solid var(--hud-border);
-  border-radius: 2px;
+  border-radius: 16px;
   color: var(--hud-text);
   backdrop-filter: blur(8px);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
 }
 
+/* Legacy corner-brackets retired in favour of a fully rounded panel. */
 .hud-panel::before,
 .hud-panel::after,
 .hud-panel > .hud-corner-tr,
 .hud-panel > .hud-corner-br {
-  content: "";
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-color: var(--hud-accent);
-  border-style: solid;
-  border-width: 0;
-  opacity: 0.6;
-  pointer-events: none;
-}
-
-.hud-panel::before {
-  top: 3px; left: 3px;
-  border-top-width: 1px;
-  border-left-width: 1px;
-}
-
-.hud-panel::after {
-  bottom: 3px; left: 3px;
-  border-bottom-width: 1px;
-  border-left-width: 1px;
-}
-
-.hud-panel > .hud-corner-tr {
-  top: 3px; right: 3px;
-  border-top-width: 1px;
-  border-right-width: 1px;
-}
-
-.hud-panel > .hud-corner-br {
-  bottom: 3px; right: 3px;
-  border-bottom-width: 1px;
-  border-right-width: 1px;
+  display: none;
 }
 
 .hud-label {
@@ -206,7 +175,7 @@ body {
   padding: 2px;
   background: transparent;
   border: 1px solid var(--hud-border);
-  border-radius: 1px;
+  border-radius: 9999px;
   display: inline-flex;
   align-items: center;
   transition: border-color 150ms ease, background 150ms ease;
@@ -277,7 +246,7 @@ body {
   color: var(--hud-text);
   background: transparent;
   border: 1px solid var(--hud-border);
-  border-radius: 2px;
+  border-radius: 9999px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
@@ -334,7 +303,7 @@ body {
   border: 1px solid var(--hud-border);
   background: transparent;
   color: var(--hud-text);
-  border-radius: 2px;
+  border-radius: 9999px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
@@ -476,21 +445,21 @@ input[type="range"].hud-slider::-moz-range-progress {
 
 input[type="range"].hud-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 10px;
+  width: 14px;
   height: 14px;
   background: var(--hud-accent);
   border: 1px solid #080a06;
-  border-radius: 1px;
+  border-radius: 9999px;
   margin-top: -6px;
   box-shadow: 0 0 6px var(--hud-accent-glow);
 }
 
 input[type="range"].hud-slider::-moz-range-thumb {
-  width: 10px;
+  width: 14px;
   height: 14px;
   background: var(--hud-accent);
   border: 1px solid #080a06;
-  border-radius: 1px;
+  border-radius: 9999px;
   box-shadow: 0 0 6px var(--hud-accent-glow);
 }
 
@@ -498,9 +467,10 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .maplibregl-ctrl-group {
   background: var(--hud-surface) !important;
   border: 1px solid var(--hud-border) !important;
-  border-radius: 2px !important;
+  border-radius: 9999px !important;
   box-shadow: none !important;
   backdrop-filter: blur(8px);
+  overflow: hidden;
 }
 
 .maplibregl-ctrl-group:not(:empty) {
@@ -513,6 +483,18 @@ input[type="range"].hud-slider::-moz-range-thumb {
   width: 32px !important;
   height: 32px !important;
   color: var(--hud-text) !important;
+}
+
+/* When stacked vertically (MapLibre default), only round the very ends
+   so the middle buttons still share a flat edge. */
+.maplibregl-ctrl-group button:first-child {
+  border-radius: 9999px 9999px 0 0 !important;
+}
+.maplibregl-ctrl-group button:last-child {
+  border-radius: 0 0 9999px 9999px !important;
+}
+.maplibregl-ctrl-group button:only-child {
+  border-radius: 9999px !important;
 }
 
 .maplibregl-ctrl-group button:hover {
@@ -547,15 +529,16 @@ input[type="range"].hud-slider::-moz-range-thumb {
   color: var(--hud-text-label) !important;
   font-family: var(--font-geist-mono), ui-monospace, monospace !important;
   font-size: 10px !important;
-  padding: 2px 6px !important;
-  border-radius: 2px !important;
+  padding: 2px 8px !important;
+  border-radius: 9999px !important;
   backdrop-filter: blur(8px);
 }
 
 .maplibregl-ctrl-attrib {
   background: var(--hud-surface) !important;
   border: 1px solid var(--hud-border) !important;
-  border-radius: 2px !important;
+  border-radius: 9999px !important;
+  padding: 2px 10px !important;
   backdrop-filter: blur(8px);
 }
 
@@ -575,7 +558,7 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .hud-handle {
   position: relative;
   width: 34px;
-  height: 64px;
+  height: 56px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -585,7 +568,7 @@ input[type="range"].hud-slider::-moz-range-thumb {
   color: var(--hud-accent);
   cursor: pointer;
   transition: background 150ms ease, border-color 150ms ease;
-  clip-path: polygon(0 8px, 100% 0, 100% 100%, 0 calc(100% - 8px));
+  border-radius: 9999px 0 0 9999px;
   backdrop-filter: blur(8px);
 }
 
@@ -610,10 +593,11 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .hud-tab-row {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 2px;
-  padding: 2px;
+  gap: 0;
+  padding: 0;
   border: 1px solid var(--hud-border);
-  border-radius: 2px;
+  border-radius: 9999px;
+  overflow: hidden;
   background: rgba(0, 0, 0, 0.35);
 }
 
@@ -626,9 +610,14 @@ input[type="range"].hud-slider::-moz-range-thumb {
   color: var(--hud-text-muted);
   background: transparent;
   border: 0;
-  border-radius: 1px;
+  border-radius: 0;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
+}
+
+/* Hairline divider between adjacent tabs in a connected row. */
+.hud-tab + .hud-tab {
+  border-left: 1px solid var(--hud-border);
 }
 
 .hud-tab:hover {
@@ -646,13 +635,13 @@ input[type="range"].hud-slider::-moz-range-thumb {
 /* ── Basemap card ───────────────────────────────────────────────────── */
 .hud-basemap-btn {
   position: relative;
-  padding: 7px 10px;
+  padding: 8px 14px;
   text-align: left;
   font-size: 11px;
   background: transparent;
   color: var(--hud-text);
   border: 1px solid transparent;
-  border-radius: 2px;
+  border-radius: 9999px;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
@@ -669,15 +658,19 @@ input[type="range"].hud-slider::-moz-range-thumb {
   text-shadow: 0 0 6px var(--hud-accent-glow);
 }
 
+/* Active indicator dot replaces the legacy left-edge bar so the rounded
+   pill silhouette stays clean. */
 .hud-basemap-btn[data-active="true"]::before {
   content: "";
   position: absolute;
-  top: 10px;
-  bottom: 10px;
-  left: 0;
-  width: 2px;
+  top: 50%;
+  left: 6px;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
   background: var(--hud-accent);
   box-shadow: 0 0 6px var(--hud-accent-glow);
+  transform: translateY(-50%);
 }
 
 /* When a selected entry is also the live (mode-active) one, brighten it */
@@ -776,11 +769,12 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .hud-basemap-switch {
   display: inline-flex;
   align-items: stretch;
-  gap: 1px;
+  gap: 0;
   background: var(--hud-surface);
   border: 1px solid var(--hud-border);
-  border-radius: 2px;
-  padding: 2px;
+  border-radius: 9999px;
+  padding: 0;
+  overflow: hidden;
   backdrop-filter: blur(8px);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
@@ -789,15 +783,20 @@ input[type="range"].hud-slider::-moz-range-thumb {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
+  width: 36px;
   height: 30px;
   background: transparent;
   border: 0;
-  border-radius: 1px;
+  border-radius: 0;
   color: var(--hud-text-muted);
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Hairline divider between adjacent buttons inside the connected pill. */
+.hud-basemap-switch-btn + .hud-basemap-switch-btn {
+  border-left: 1px solid var(--hud-border);
 }
 
 .hud-basemap-switch-btn:hover {
@@ -831,7 +830,7 @@ input[type="range"].hud-slider::-moz-range-thumb {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 7px 12px;
+  padding: 8px 18px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -839,7 +838,7 @@ input[type="range"].hud-slider::-moz-range-thumb {
   color: #080a06;
   background: var(--hud-accent);
   border: 1px solid var(--hud-accent);
-  border-radius: 2px;
+  border-radius: 9999px;
   cursor: pointer;
   transition: background 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
   box-shadow: 0 0 12px var(--hud-accent-glow);
@@ -862,12 +861,12 @@ input[type="range"].hud-slider::-moz-range-thumb {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--hud-border);
   background: transparent;
   color: var(--hud-text);
-  border-radius: 2px;
+  border-radius: 9999px;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
 }
@@ -888,7 +887,7 @@ input[type="range"].hud-slider::-moz-range-thumb {
   position: relative;
   width: 32px;
   height: 18px;
-  border-radius: 10px;
+  border-radius: 9999px;
   border: 1px solid var(--hud-border);
   background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
@@ -921,7 +920,7 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .hud-search {
   border: 1px solid var(--hud-border);
   background: var(--hud-surface);
-  border-radius: 2px;
+  border-radius: 9999px;
   transition: border-color 150ms ease;
 }
 
@@ -933,7 +932,8 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .hud-search-dropdown {
   border: 1px solid var(--hud-border-strong);
   background: var(--hud-surface-solid);
-  border-radius: 2px;
+  border-radius: 16px;
+  overflow: hidden;
   backdrop-filter: blur(10px);
   box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.7);
 }

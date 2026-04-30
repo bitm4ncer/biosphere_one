@@ -19,7 +19,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-lg rounded-2xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
+      <div className="w-full max-w-lg rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl">
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-semibold tracking-tight">Bring your own credentials</h2>
@@ -64,7 +64,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
               type="text"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm focus:border-[color:var(--hud-accent)] focus:outline-none"
+              className="w-full rounded-full border border-neutral-700 bg-neutral-950 px-5 py-2 font-mono text-sm focus:border-[color:var(--hud-accent)] focus:outline-none"
               placeholder="sh-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               autoComplete="off"
               spellCheck={false}
@@ -78,14 +78,14 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
                 type={showSecret ? "text" : "password"}
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
-                className="w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 pr-16 font-mono text-sm focus:border-[color:var(--hud-accent)] focus:outline-none"
+                className="w-full rounded-full border border-neutral-700 bg-neutral-950 px-5 py-2 pr-20 font-mono text-sm focus:border-[color:var(--hud-accent)] focus:outline-none"
                 autoComplete="off"
                 spellCheck={false}
               />
               <button
                 type="button"
                 onClick={() => setShowSecret((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200"
               >
                 {showSecret ? "hide" : "show"}
               </button>
@@ -102,7 +102,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
               <button
                 type="button"
                 onClick={onClear}
-                className="rounded-lg px-3 py-2 text-sm text-red-400 hover:text-red-300"
+                className="rounded-full px-3 py-2 text-sm text-red-400 hover:text-red-300"
               >
                 Clear credentials
               </button>
@@ -114,7 +114,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-lg px-4 py-2 text-sm text-neutral-400 hover:text-neutral-200"
+                  className="rounded-full px-4 py-2 text-sm text-neutral-400 hover:text-neutral-200"
                 >
                   Cancel
                 </button>

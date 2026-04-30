@@ -88,7 +88,7 @@ export function SearchBox({ onSelect }: Props) {
 
   return (
     <div ref={boxRef} className="pointer-events-auto relative w-full text-xs">
-      <div className="hud-search flex items-center gap-2 px-2.5 py-1.5">
+      <div className="hud-search flex items-center gap-2 px-4 py-2">
         <svg
           viewBox="0 0 16 16"
           className="h-3.5 w-3.5 shrink-0 text-[color:var(--hud-text-muted)]"
@@ -155,7 +155,7 @@ export function SearchBox({ onSelect }: Props) {
                     <div className="truncate text-[10px] text-[color:var(--hud-text-muted)]">
                       {r.label.replace(r.name ? `${r.name}, ` : "", "") || "—"}
                       {r.category && (
-                        <span className="ml-1.5 rounded border border-[color:var(--hud-border)] px-1 py-0.5 text-[color:var(--hud-text-muted)]">
+                        <span className="ml-1.5 rounded-full border border-[color:var(--hud-border)] px-1.5 py-0.5 text-[color:var(--hud-text-muted)]">
                           {r.category}
                         </span>
                       )}
