@@ -22,7 +22,8 @@ import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
 import {
   gibsDateNDaysAgo,
-  gibsGeoColorRecentFrames,
+  gibsImergRecentFrames,
+  gibsImergUrl,
   gibsTileUrl,
   gibsYesterday,
 } from "@/lib/gibs";
@@ -43,8 +44,9 @@ import { HikingToggle } from "./HikingToggle";
 import { HikingPanel } from "./hud/HikingPanel";
 import { useHikingLayers } from "./hiking/useHikingLayers";
 
-// Live cloud cover (NASA GIBS GOES-East GeoColor). Frames are 10-min
-// apart; the playback interval below is the visual slider cadence.
+// Live precipitation (NASA GPM IMERG). Frames are 30-min apart with
+// a ~4 h delivery lag; we probe to find the actual youngest available
+// frame and animate 13 frames (~6 h history) ending there.
 const CLOUDS_ANIM_INTERVAL_MS = 500;
 const CLOUDS_REFRESH_MS = 5 * 60 * 1000;
 
@@ -168,9 +170,10 @@ function removeHybridOverlay(map: MLMap) {
   if (map.getSource(HYBRID_TRANSPORT_SOURCE_ID)) map.removeSource(HYBRID_TRANSPORT_SOURCE_ID);
 }
 
-// NASA GIBS GeoColor tile matrix `GoogleMapsCompatible_Level7` covers
-// z 0-7. MapLibre overzooms past z=7 to keep the layer visible higher.
-const WEATHER_MAXZOOM = 7;
+// NASA GIBS IMERG global precipitation tile matrix
+// `GoogleMapsCompatible_Level6` covers z 0-6. MapLibre overzooms past
+// z=6 to keep the layer visible higher.
+const WEATHER_MAXZOOM = 6;
 const WEATHER_TILE_SIZE = 256;
 
 function ensureWeatherLayer(map: MLMap, urls: string[], opacity: number) {
@@ -182,7 +185,7 @@ function ensureWeatherLayer(map: MLMap, urls: string[], opacity: number) {
     tileSize: WEATHER_TILE_SIZE,
     maxzoom: WEATHER_MAXZOOM,
     attribution:
-      '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · GOES-East GeoColor · 10-min',
+      '<a href="https://gpm.nasa.gov/data/imerg" target="_blank" rel="noreferrer">NASA GPM IMERG</a> · global precipitation · 30-min',
   });
   map.addLayer({
     id: WEATHER_LAYER_ID,
@@ -677,6 +680,68 @@ function getLastProbedFiresUrl(): string | null {
 
 function firesTileUrl(layer: string, date: string): string {
   return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`;
+}
+
+// IMERG probe: find the youngest 30-min boundary that GIBS has actually
+// published. The advertised lag is 4h but real-world delivery varies
+// between 3h and 9h depending on the satellite passes and processing
+// queue. Probing avoids the "first frame is empty until you drag the
+// slider" symptom — every frame in the generated array is guaranteed
+// to be a 200-returning timestamp.
+const IMERG_PROBE_TILE = { z: 2, x: 2, y: 1 }; // covers Africa+Europe
+
+interface ImergProbe {
+  isoTime: string;
+  time: number; // epoch seconds
+}
+let imergProbed: { at: number; result: ImergProbe | null } | null = null;
+let imergProbeInFlight: Promise<ImergProbe | null> | null = null;
+const IMERG_PROBE_TTL_MS = 5 * 60 * 1000;
+
+function imergProbeUrl(time: string): string {
+  return gibsImergUrl({ time }).replace(
+    "{z}/{y}/{x}",
+    `${IMERG_PROBE_TILE.z}/${IMERG_PROBE_TILE.y}/${IMERG_PROBE_TILE.x}`,
+  );
+}
+
+function alignToHalfHour(d: Date): Date {
+  const out = new Date(d);
+  out.setUTCMinutes(out.getUTCMinutes() < 30 ? 0 : 30);
+  out.setUTCSeconds(0);
+  out.setUTCMilliseconds(0);
+  return out;
+}
+
+async function findLatestImergFrame(): Promise<ImergProbe | null> {
+  // Use a 5-min TTL on the probe result so subsequent overlay toggles
+  // don't re-probe, but a long-running session eventually picks up
+  // newly-published frames as time moves forward.
+  if (imergProbed && Date.now() - imergProbed.at < IMERG_PROBE_TTL_MS) {
+    return imergProbed.result;
+  }
+  if (imergProbeInFlight) return imergProbeInFlight;
+  imergProbeInFlight = (async () => {
+    // Probe from 2h ago backwards in 30-min steps up to 12h. Most days
+    // a frame from t-3h to t-5h is the youngest.
+    for (let lagMin = 120; lagMin <= 720; lagMin += 30) {
+      const t = alignToHalfHour(new Date(Date.now() - lagMin * 60_000));
+      const isoTime = t.toISOString().slice(0, 19) + "Z";
+      const ok = await probeUrl(imergProbeUrl(isoTime));
+      if (ok) {
+        const result = { isoTime, time: Math.floor(t.getTime() / 1000) };
+        imergProbed = { at: Date.now(), result };
+        return result;
+      }
+    }
+    imergProbed = { at: Date.now(), result: null };
+    return null;
+  })();
+  try {
+    return await imergProbeInFlight;
+  } finally {
+    imergProbeInFlight = null;
+  }
 }
 
 function ensureFiresLayer(
@@ -1323,21 +1388,36 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     };
   }, [weatherOn]);
 
-  // NASA GIBS GeoColor live cloud imagery (geostationary satellite). No
-  // manifest fetch — the URL TIME segment is generated from current time
-  // every 5 min so animation stays current. GOES-East gives global-ish
-  // coverage including Atlantic + western Europe; the eastern edge of
-  // its disc reaches ~5°E so the user's region (Düsseldorf) is barely
-  // covered. Better than RainViewer radar which has zero coverage
-  // outside Europe/N.America/Australia and shows only precipitation.
+  // NASA GPM IMERG global precipitation (30-min cadence, ~4 h delivery
+  // lag, free, no auth). Probes once per Clouds-on session to find the
+  // youngest frame GIBS has actually published, then generates 13
+  // frames at 30-min cadence ending there. Re-probes every 5 min so a
+  // long-running session picks up new frames as time advances.
   const [weatherFramesGen, setWeatherFramesGen] = useState(0);
+  const [imergProbeResult, setImergProbeResult] = useState<ImergProbe | null>(null);
+  const [imergProbeFinished, setImergProbeFinished] = useState(false);
+
   useEffect(() => {
-    if (!weatherOn) return;
-    const id = window.setInterval(
-      () => setWeatherFramesGen((g) => g + 1),
-      CLOUDS_REFRESH_MS,
-    );
-    return () => window.clearInterval(id);
+    if (!weatherOn) {
+      setImergProbeFinished(false);
+      return;
+    }
+    let cancelled = false;
+    const probe = async () => {
+      const result = await findLatestImergFrame();
+      if (cancelled) return;
+      setImergProbeResult(result);
+      setImergProbeFinished(true);
+    };
+    probe();
+    const id = window.setInterval(() => {
+      probe();
+      setWeatherFramesGen((g) => g + 1);
+    }, CLOUDS_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, [weatherOn]);
 
   interface WeatherFrame {
@@ -1348,12 +1428,15 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
 
   const weatherFrames: WeatherFrame[] = useMemo(() => {
     if (!weatherOn) return [];
-    return gibsGeoColorRecentFrames({ count: 13, intervalMin: 10, lagMin: 30 }).map(
-      (f) => ({ time: f.time, date: f.isoTime, urls: [f.url] }),
-    );
+    if (!imergProbeResult) return [];
+    return gibsImergRecentFrames({
+      count: 13,
+      intervalMin: 30,
+      startFromIsoTime: imergProbeResult.isoTime,
+    }).map((f) => ({ time: f.time, date: f.isoTime, urls: [f.url] }));
     // weatherFramesGen ticks each refresh interval to regenerate URLs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weatherOn, weatherFramesGen]);
+  }, [weatherOn, imergProbeResult, weatherFramesGen]);
 
   // Whether the cloud overlay is active. RainViewer-era state stayed as
   // a "satellite" / "radar" switch; we now always show satellite-derived
@@ -2222,6 +2305,8 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           weatherManifestError={weatherManifestError}
           weatherManifestLoaded={weatherFrames.length > 0}
           weatherSourceKind={weatherSourceKind}
+          imergProbeFinished={imergProbeFinished}
+          imergProbedIsoTime={imergProbeResult?.isoTime ?? null}
           firesResolvedLayer={firesResolved?.layer ?? null}
           firesResolvedDate={firesResolved?.date ?? null}
           firesProbeFinished={firesProbeFinished}
@@ -2527,7 +2612,7 @@ function OverlayPanel({
 
   const caption =
     active === "clouds"
-      ? "Live cloud cover · GOES-East · past 2 h"
+      ? "Live precipitation · GPM IMERG · global · past 6 h"
       : active === "rail"
         ? railStyle === "lines"
           ? railLineCaption
@@ -3224,6 +3309,8 @@ interface DebugHudProps {
   weatherManifestError: string | null;
   weatherManifestLoaded: boolean;
   weatherSourceKind: "satellite" | "radar";
+  imergProbeFinished: boolean;
+  imergProbedIsoTime: string | null;
   firesResolvedLayer: string | null;
   firesResolvedDate: string | null;
   firesProbeFinished: boolean;
@@ -3246,6 +3333,8 @@ function DebugHud({
   weatherManifestError,
   weatherManifestLoaded,
   weatherSourceKind,
+  imergProbeFinished,
+  imergProbedIsoTime,
   firesResolvedLayer,
   firesResolvedDate,
   firesProbeFinished,
@@ -3289,7 +3378,13 @@ function DebugHud({
         layer present: fires-layer={String(firesLayerOnMap)} · weather-layer={String(weatherLayerOnMap)}
       </div>
       <div>
-        manifest: loaded={String(weatherManifestLoaded)} · src={weatherSourceKind} · frames={weatherFramesCount} · err={weatherManifestError ?? "none"}
+        clouds: frames={weatherFramesCount} ·{" "}
+        {!imergProbeFinished
+          ? "(probing IMERG…)"
+          : imergProbedIsoTime
+          ? `IMERG anchor=${imergProbedIsoTime}`
+          : "(no IMERG frame in last 12h)"}
+        {weatherManifestError ? ` · err=${weatherManifestError}` : ""}
       </div>
       <div>
         fires:{" "}

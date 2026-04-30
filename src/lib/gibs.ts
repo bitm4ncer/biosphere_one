@@ -38,22 +38,6 @@ export function gibsDateNDaysAgo(n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * NASA GIBS GeoColor: live cloud imagery from geostationary satellites.
- * GOES-East covers Americas + Atlantic + western Europe at the disc's
- * eastern edge. Tile matrix `GoogleMapsCompatible_Level7` (z 0-7) for
- * the EPSG:3857 endpoint; MapLibre overzooms past z=7.
- *
- * The URL TIME segment must be aligned to 10-min boundaries.
- * GIBS publishes new GeoColor frames roughly 25-40 min after the
- * sensor pass; the `lagMin` parameter accounts for that.
- */
-export function gibsGeoColorUrl(opts: { time: string; satellite?: "east" | "west" }): string {
-  const layer =
-    opts.satellite === "west" ? "GOES-West_ABI_GeoColor" : "GOES-East_ABI_GeoColor";
-  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${opts.time}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`;
-}
-
 export interface GibsLiveFrame {
   time: number; // epoch seconds
   isoTime: string; // YYYY-MM-DDTHH:MM:SSZ
@@ -61,10 +45,85 @@ export interface GibsLiveFrame {
 }
 
 /**
- * Generate `count` frames at `intervalMin` cadence ending `lagMin`
- * minutes before now, aligned to 10-min boundaries. Default returns
- * 13 frames covering the past ~2 hours, ending 30 min ago (the
- * youngest frame GIBS reliably has published).
+ * NASA GPM IMERG Precipitation Rate: GLOBAL precipitation, 30-min
+ * cadence, ~4 h delivery lag (Early Run). Free, no auth, no API key.
+ * This is the only single-source product that gives true global live
+ * weather coverage — geostationary satellites only cover their disc,
+ * RainViewer's radar coverage stops at the edges of national radar
+ * networks. IMERG fuses every weather satellite into one mosaic and
+ * just works everywhere.
+ *
+ * Tile matrix `GoogleMapsCompatible_Level6` (z 0-6) for the EPSG:3857
+ * endpoint; MapLibre overzooms past z=6.
+ */
+export function gibsImergUrl(opts: { time: string }): string {
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/IMERG_Precipitation_Rate/default/${opts.time}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png`;
+}
+
+function alignTo30Min(d: Date): Date {
+  const out = new Date(d);
+  out.setUTCMinutes(out.getUTCMinutes() < 30 ? 0 : 30);
+  out.setUTCSeconds(0);
+  out.setUTCMilliseconds(0);
+  return out;
+}
+
+function gibsIsoTime(d: Date): string {
+  return d.toISOString().slice(0, 19) + "Z";
+}
+
+/**
+ * Generate `count` IMERG frames ending `lagMin` minutes before now,
+ * aligned to 30-min boundaries. Default returns 13 frames covering
+ * the past ~6 hours, ending 4 h ago (typical IMERG Early Run lag).
+ */
+export function gibsImergRecentFrames(opts: {
+  count?: number;
+  intervalMin?: number;
+  lagMin?: number;
+  startFromIsoTime?: string;
+} = {}): GibsLiveFrame[] {
+  const count = opts.count ?? 13;
+  const intervalMin = opts.intervalMin ?? 30;
+  const lagMin = opts.lagMin ?? 240;
+  let youngest: Date;
+  if (opts.startFromIsoTime) {
+    youngest = new Date(opts.startFromIsoTime);
+  } else {
+    youngest = alignTo30Min(new Date(Date.now() - lagMin * 60_000));
+  }
+  const frames: GibsLiveFrame[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const t = new Date(youngest.getTime() - i * intervalMin * 60_000);
+    const isoTime = gibsIsoTime(t);
+    frames.push({
+      time: Math.floor(t.getTime() / 1000),
+      isoTime,
+      url: gibsImergUrl({ time: isoTime }),
+    });
+  }
+  return frames;
+}
+
+/**
+ * NASA GIBS GeoColor: live cloud imagery from geostationary satellites.
+ * GOES-East covers Americas + Atlantic + western Europe at the disc's
+ * eastern edge. Tile matrix `GoogleMapsCompatible_Level7` (z 0-7) for
+ * the EPSG:3857 endpoint; MapLibre overzooms past z=7.
+ *
+ * Kept as a fallback if IMERG isn't reachable. The URL TIME segment
+ * must be aligned to 10-min boundaries.
+ */
+export function gibsGeoColorUrl(opts: { time: string; satellite?: "east" | "west" }): string {
+  const layer =
+    opts.satellite === "west" ? "GOES-West_ABI_GeoColor" : "GOES-East_ABI_GeoColor";
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${opts.time}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`;
+}
+
+/**
+ * Generate `count` GeoColor frames at 10-min cadence ending `lagMin`
+ * minutes before now. Default 13 frames over past ~2 hours, ending
+ * 30 min ago.
  */
 export function gibsGeoColorRecentFrames(opts: {
   count?: number;
@@ -84,7 +143,7 @@ export function gibsGeoColorRecentFrames(opts: {
   const frames: GibsLiveFrame[] = [];
   for (let i = count - 1; i >= 0; i--) {
     const t = new Date(youngest.getTime() - i * intervalMin * 60_000);
-    const isoTime = t.toISOString().slice(0, 19) + "Z";
+    const isoTime = gibsIsoTime(t);
     frames.push({
       time: Math.floor(t.getTime() / 1000),
       isoTime,
