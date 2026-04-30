@@ -22,15 +22,10 @@ import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
 import {
   gibsDateNDaysAgo,
+  gibsGeoColorRecentFrames,
   gibsTileUrl,
   gibsYesterday,
 } from "@/lib/gibs";
-import {
-  fetchWeatherMaps,
-  radarTileUrl,
-  satelliteTileUrl,
-  type RadarFrame,
-} from "@/lib/weather";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { fetchRailNetwork } from "@/lib/hiking/overpass";
 import {
@@ -48,13 +43,10 @@ import { HikingToggle } from "./HikingToggle";
 import { HikingPanel } from "./hud/HikingPanel";
 import { useHikingLayers } from "./hiking/useHikingLayers";
 
-// Live cloud radar (RainViewer satellite IR). Frames are 10-min apart;
-// the playback interval below is just visual cadence on the slider.
+// Live cloud cover (NASA GIBS GOES-East GeoColor). Frames are 10-min
+// apart; the playback interval below is the visual slider cadence.
 const CLOUDS_ANIM_INTERVAL_MS = 500;
 const CLOUDS_REFRESH_MS = 5 * 60 * 1000;
-const CLOUDS_TILE_SIZE_FAST = 256;
-const CLOUDS_TILE_SIZE_SHARP = 512;
-const CLOUDS_SHARPEN_DELAY_MS = 1500;
 
 const OVERLAY_SOURCE_ID = "timeline-overlay";
 const OVERLAY_LAYER_ID = "timeline-overlay-layer";
@@ -176,27 +168,21 @@ function removeHybridOverlay(map: MLMap) {
   if (map.getSource(HYBRID_TRANSPORT_SOURCE_ID)) map.removeSource(HYBRID_TRANSPORT_SOURCE_ID);
 }
 
-// RainViewer recommends z=1-7 for radar tiles. Beyond z=7 they return a
-// "Zoom Level Not Supported" placeholder image instead of real data.
-// Capping source maxzoom at 7 makes MapLibre overzoom (stretch) the
-// z=7 tiles for higher zoom views, which works well with smooth=1.
-const WEATHER_MAXZOOM = 7;
+// NASA GIBS GeoColor tile matrix `2km` has zoom range 0-6. MapLibre
+// overzooms past z=6 to keep the layer visible at higher zoom.
+const WEATHER_MAXZOOM = 6;
+const WEATHER_TILE_SIZE = 256;
 
-function ensureWeatherLayer(
-  map: MLMap,
-  urls: string[],
-  opacity: number,
-  tileSize: number,
-) {
+function ensureWeatherLayer(map: MLMap, urls: string[], opacity: number) {
   if (map.getLayer(WEATHER_LAYER_ID)) return;
   if (map.getSource(WEATHER_SOURCE_ID)) map.removeSource(WEATHER_SOURCE_ID);
   map.addSource(WEATHER_SOURCE_ID, {
     type: "raster",
     tiles: urls,
-    tileSize,
+    tileSize: WEATHER_TILE_SIZE,
     maxzoom: WEATHER_MAXZOOM,
     attribution:
-      '<a href="https://www.rainviewer.com/" target="_blank" rel="noreferrer">RainViewer</a> · satellite IR · 10-min',
+      '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · GOES-East GeoColor · 10-min',
   });
   map.addLayer({
     id: WEATHER_LAYER_ID,
@@ -1319,7 +1305,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     if (!weatherOn) {
       const map = mapRef.current;
       if (map) removeWeatherLayer(map);
-      appliedWeatherTileSizeRef.current = null;
       setWeatherLoading(false);
     }
   }, [weatherOn]);
@@ -1341,77 +1326,22 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     };
   }, [weatherOn]);
 
-  // RainViewer manifest (5-min memo'd in lib/weather.ts).
-  // We pull both radar (precipitation, reliable) and satellite IR (cloud
-  // cover — RainViewer has periodically returned 0 frames for this; we
-  // fall back to radar when that happens).
-  const [weatherManifest, setWeatherManifest] = useState<{
-    host: string;
-    satelliteInfrared: RadarFrame[];
-    radarPast: RadarFrame[];
-    radarNowcast: RadarFrame[];
-  } | null>(null);
-  const [weatherManifestError, setWeatherManifestError] = useState<string | null>(null);
-  // Hybrid 256 → 512 lazyload. 256 paints first; we bump to 512 once the
-  // initial paint settles (sharper imagery loads in the background).
-  const [weatherTileSize, setWeatherTileSize] = useState<256 | 512>(
-    CLOUDS_TILE_SIZE_FAST,
-  );
-  // Last tile size actually applied to the MapLibre source. When this
-  // diverges from `weatherTileSize` we must remove + recreate the source
-  // (tileSize is fixed at source-creation time).
-  const appliedWeatherTileSizeRef = useRef<256 | 512 | null>(null);
-
-  // Fetch + auto-refresh the manifest while Clouds is on.
+  // NASA GIBS GeoColor live cloud imagery (geostationary satellite). No
+  // manifest fetch — the URL TIME segment is generated from current time
+  // every 5 min so animation stays current. GOES-East gives global-ish
+  // coverage including Atlantic + western Europe; the eastern edge of
+  // its disc reaches ~5°E so the user's region (Düsseldorf) is barely
+  // covered. Better than RainViewer radar which has zero coverage
+  // outside Europe/N.America/Australia and shows only precipitation.
+  const [weatherFramesGen, setWeatherFramesGen] = useState(0);
   useEffect(() => {
-    if (!weatherOn) {
-      setWeatherManifest(null);
-      setWeatherManifestError(null);
-      setWeatherTileSize(CLOUDS_TILE_SIZE_FAST);
-      return;
-    }
-    let cancelled = false;
-    const ctrl = new AbortController();
-    const load = async () => {
-      try {
-        const wm = await fetchWeatherMaps(ctrl.signal);
-        if (cancelled) return;
-        setWeatherManifest({
-          host: wm.host,
-          satelliteInfrared: wm.satelliteInfrared,
-          radarPast: wm.radarPast,
-          radarNowcast: wm.radarNowcast,
-        });
-        setWeatherManifestError(null);
-      } catch (err) {
-        if ((err as Error).name === "AbortError") return;
-        console.warn("[clouds]", err);
-        if (!cancelled) {
-          setWeatherManifestError(
-            (err as Error).message || "RainViewer unreachable",
-          );
-        }
-      }
-    };
-    load();
-    const id = window.setInterval(load, CLOUDS_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      ctrl.abort();
-      window.clearInterval(id);
-    };
-  }, [weatherOn]);
-
-  // Bump tile size from 256 → 512 shortly after first paint so MapLibre
-  // refetches sharper tiles. One-shot per Clouds-on session.
-  useEffect(() => {
-    if (!weatherOn || weatherTileSize === CLOUDS_TILE_SIZE_SHARP) return;
-    const id = window.setTimeout(
-      () => setWeatherTileSize(CLOUDS_TILE_SIZE_SHARP),
-      CLOUDS_SHARPEN_DELAY_MS,
+    if (!weatherOn) return;
+    const id = window.setInterval(
+      () => setWeatherFramesGen((g) => g + 1),
+      CLOUDS_REFRESH_MS,
     );
-    return () => window.clearTimeout(id);
-  }, [weatherOn, weatherTileSize]);
+    return () => window.clearInterval(id);
+  }, [weatherOn]);
 
   interface WeatherFrame {
     time: number;
@@ -1419,41 +1349,28 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     urls: string[];
   }
 
-  // Whether the active source is satellite IR (cloud cover) or radar
-  // (precipitation). Decided per-render based on what the manifest
-  // actually contains: satellite if non-empty, else radar fallback.
-  const weatherSourceKind: "satellite" | "radar" = useMemo(() => {
-    if (!weatherManifest) return "satellite";
-    return weatherManifest.satelliteInfrared.length > 0 ? "satellite" : "radar";
-  }, [weatherManifest]);
-
   const weatherFrames: WeatherFrame[] = useMemo(() => {
-    if (!weatherManifest) return [];
-    const { host } = weatherManifest;
-    if (weatherSourceKind === "satellite") {
-      return weatherManifest.satelliteInfrared.map((f) => ({
-        time: f.time,
-        date: new Date(f.time * 1000).toISOString(),
-        urls: [satelliteTileUrl({ host, path: f.path, size: weatherTileSize })],
-      }));
-    }
-    // Radar fallback: past + nowcast, in chronological order.
-    return [
-      ...weatherManifest.radarPast,
-      ...weatherManifest.radarNowcast,
-    ].map((f) => ({
-      time: f.time,
-      date: new Date(f.time * 1000).toISOString(),
-      urls: [radarTileUrl({ host, path: f.path, size: weatherTileSize })],
-    }));
-  }, [weatherManifest, weatherTileSize, weatherSourceKind]);
+    if (!weatherOn) return [];
+    return gibsGeoColorRecentFrames({ count: 13, intervalMin: 10, lagMin: 30 }).map(
+      (f) => ({ time: f.time, date: f.isoTime, urls: [f.url] }),
+    );
+    // weatherFramesGen ticks each refresh interval to regenerate URLs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weatherOn, weatherFramesGen]);
+
+  // Whether the cloud overlay is active. RainViewer-era state stayed as
+  // a "satellite" / "radar" switch; we now always show satellite-derived
+  // cloud cover, so the kind is constant. Kept for the OverlayPanel /
+  // DebugHud props to avoid wider refactors.
+  const weatherSourceKind: "satellite" | "radar" = "satellite";
+  const weatherManifestError: string | null = null;
 
   // When fresh frames arrive (first load or 5-min refresh), snap the
   // playhead to the most-recent frame so the user always sees "now".
   useEffect(() => {
     if (weatherFrames.length === 0) return;
     setWeatherFrameIndex(weatherFrames.length - 1);
-  }, [weatherManifest, weatherFrames.length]);
+  }, [weatherFrames.length, weatherFramesGen]);
 
   useEffect(() => {
     if (!weatherOn || !weatherPlaying || weatherFrames.length === 0) return;
@@ -1470,13 +1387,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     const map = mapRef.current;
     if (!map || !weatherOn || !currentWeatherUrls) return;
     const apply = () => {
-      // tileSize is baked in at source creation, so a change forces a
-      // full recreate. Same path on initial creation.
-      if (appliedWeatherTileSizeRef.current !== weatherTileSize) {
-        removeWeatherLayer(map);
-        appliedWeatherTileSizeRef.current = weatherTileSize;
-      }
-      ensureWeatherLayer(map, currentWeatherUrls, weatherOpacity, weatherTileSize);
+      ensureWeatherLayer(map, currentWeatherUrls, weatherOpacity);
       updateWeatherTiles(map, currentWeatherUrls);
     };
     if (map.isStyleLoaded()) apply();
@@ -1485,7 +1396,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       map.off("style.load", apply);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weatherOn, active, weatherUrlsKey, weatherTileSize]);
+  }, [weatherOn, active, weatherUrlsKey]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2316,7 +2227,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           railwayOn={railwayOn}
           weatherFramesCount={weatherFrames.length}
           weatherManifestError={weatherManifestError}
-          weatherManifestLoaded={weatherManifest !== null}
+          weatherManifestLoaded={weatherFrames.length > 0}
           weatherSourceKind={weatherSourceKind}
           firesResolvedDate={firesResolvedDate}
           lastBasemapKey={lastAppliedBasemapKeyRef.current}
@@ -2621,9 +2532,7 @@ function OverlayPanel({
 
   const caption =
     active === "clouds"
-      ? weatherProps.sourceKind === "satellite"
-        ? "Live cloud cover · past 2 h + nowcast"
-        : "Live precipitation radar · past 2 h + nowcast"
+      ? "Live cloud cover · GOES-East · past 2 h"
       : active === "rail"
         ? railStyle === "lines"
           ? railLineCaption
