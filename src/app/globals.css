@@ -276,6 +276,42 @@ body {
 }
 
 /* ── Mobile bottom sheet ─────────────────────────────────────────────── */
+/* ── Mobile bottom sheet ─────────────────────────────────────────────── */
+/* Mobile bottom-sheet positioning — driven by data-sheet-state on the
+   <aside>. Anchored at the floating bottom-nav (bottom: --hud-nav-h)
+   and at the floating top-bar (top: --hud-topbar-h) for the full state.
+   Closed state translates by full height + nav offset so the sheet
+   leaves the viewport entirely instead of peeking above the nav. */
+@media (max-width: 767px) {
+  .hud-bottom-sheet {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: var(--hud-nav-h) !important;
+    top: auto !important;
+    height: 50dvh !important;
+    transform: translateY(0);
+    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      top 300ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 300ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, top, height;
+  }
+
+  .hud-bottom-sheet[data-sheet-state="closed"] {
+    transform: translateY(calc(100% + var(--hud-nav-h)));
+    pointer-events: none;
+  }
+
+  .hud-bottom-sheet[data-sheet-state="half"] {
+    height: 50dvh !important;
+  }
+
+  .hud-bottom-sheet[data-sheet-state="full"] {
+    top: var(--hud-topbar-h) !important;
+    height: auto !important;
+  }
+}
+
 .hud-bottom-sheet-grabber {
   display: none;
   align-items: center;

@@ -2051,25 +2051,19 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           activeSidebar === null ? "closed" : sheetExpanded ? "full" : "half"
         }
         className={[
-          "fixed md:absolute z-10 flex w-full",
-          "left-0 right-0 md:left-auto md:right-0",
-          "bottom-[var(--hud-nav-h)] md:bottom-0 md:top-0",
-          // On mobile we anchor the top edge for the full state and let
-          // bottom + top determine the height (no calc()), so flex-row
-          // stretch on the aside can't collapse the inner panel.
-          sheetExpanded
-            ? "top-[var(--hud-topbar-h)]"
-            : "top-auto",
-          "md:max-w-[340px]",
+          // Mobile-only positioning lives on .hud-bottom-sheet (in
+          // globals.css) so we can translate by calc(100% + nav) when
+          // closed, which Tailwind can't express.
+          "hud-bottom-sheet",
+          "z-10 flex w-full",
+          // Desktop overrides — kick in at md+ where the mobile CSS
+          // media query no longer applies.
+          "md:absolute md:right-0 md:top-0 md:bottom-0",
+          "md:left-auto md:max-w-[340px]",
           "rounded-t-3xl md:rounded-none",
           "border-t md:border-t-0 border-[color:var(--hud-border)]",
-          "transition-[transform,top,height] md:transition-transform",
-          "duration-300 md:duration-200 ease-out will-change-transform",
-          activeSidebar === null
-            ? "translate-y-full md:translate-y-0"
-            : "translate-y-0",
-          sheetExpanded ? "h-auto" : "h-[50dvh]",
-          "md:h-auto md:!top-0",
+          "md:transition-transform md:duration-200 md:ease-out",
+          "will-change-transform",
           sidebarOpen
             ? "md:translate-x-0"
             : "md:translate-x-[calc(100%-34px)]",
@@ -2161,7 +2155,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-3 pb-[max(env(safe-area-inset-bottom,0px),12px)]">
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-3">
             {activeSidebar === "hiking" ? (
               <HikingPanel mapRef={mapRef} />
             ) : (
