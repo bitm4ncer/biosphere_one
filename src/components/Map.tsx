@@ -1858,7 +1858,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={`${ICON_BASE_PATH}/icon.svg`}
-          alt="Biosphere1"
+          alt="BiosphereOne"
           width={36}
           height={36}
           className="pointer-events-auto block h-9 w-9 shrink-0"

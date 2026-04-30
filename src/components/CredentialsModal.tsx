@@ -24,7 +24,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
           <div>
             <h2 className="text-lg font-semibold tracking-tight">Bring your own credentials</h2>
             <p className="mt-1 text-sm text-neutral-400">
-              Biosphere1 runs entirely in your browser — no backend, no proxy. Create an OAuth
+              BiosphereOne runs entirely in your browser — no backend, no proxy. Create an OAuth
               client in your{" "}
               <a
                 href="https://dataspace.copernicus.eu/"

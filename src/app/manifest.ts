@@ -4,8 +4,8 @@ export const dynamic = "force-static";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Biosphere1",
-    short_name: "Biosphere1",
+    name: "BiosphereOne",
+    short_name: "BiosphereOne",
     description:
       "Live satellite imagery with weather radar. Sentinel-2 cloudless basemap, latest-available overlay on demand, real-time precipitation.",
     start_url: ".",

@@ -16,13 +16,13 @@ const geistMono = Geist_Mono({
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 export const metadata: Metadata = {
-  title: "Biosphere1 — Live Satellite Map",
+  title: "BiosphereOne",
   description:
     "Live satellite imagery with weather radar. Sentinel-2 cloudless basemap, latest-available overlay on demand, real-time precipitation — all client-side.",
-  applicationName: "Biosphere1",
+  applicationName: "BiosphereOne",
   appleWebApp: {
     capable: true,
-    title: "Biosphere1",
+    title: "BiosphereOne",
     statusBarStyle: "black-translucent",
   },
 };
