@@ -1982,7 +1982,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             onClick={() => selectPane("control")}
             data-active={activePane === "control" && sidebarOpen}
             aria-pressed={activePane === "control" && sidebarOpen}
-            aria-label="Control Deck"
+            aria-label="Map Controls"
             className="hud-sheet-tab"
           >
             <svg
@@ -2006,7 +2006,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             onClick={() => selectPane("hiking")}
             data-active={activePane === "hiking" && sidebarOpen}
             aria-pressed={activePane === "hiking" && sidebarOpen}
-            aria-label="Hiking"
+            aria-label="Routes"
             className="hud-sheet-tab"
           >
             <svg
@@ -2040,7 +2040,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               <span className="hidden md:inline">BIOSPHERE · v1</span>
             </div>
             <span className="hud-label justify-self-center truncate text-center">
-              {activePane === "hiking" ? "Hiking" : "Control Deck"}
+              {activePane === "hiking" ? "Routes" : "Map Controls"}
             </span>
             <div className="flex items-center justify-self-end gap-2">
               {/* Expand toggle — mobile only */}
@@ -2092,7 +2092,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-3">
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 pt-3 pb-3">
             {activePane === "hiking" ? (
               <HikingPanel mapRef={mapRef} />
             ) : (

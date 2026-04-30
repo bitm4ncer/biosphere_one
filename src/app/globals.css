@@ -297,6 +297,11 @@ body {
     backdrop-filter: blur(10px);
     transition: height 320ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: height;
+    /* Reserve the iPhone home-indicator safe-area inside the sheet so
+       the sheet's surface colour fills all the way to the screen edge
+       (no bare black strip), while pushing the inner layout up so its
+       last row is still readable above the indicator. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     /* Total height of always-visible peek: grabber + tab row + safe-area. */
     --hud-peek-h: calc(82px + env(safe-area-inset-bottom, 0px));
   }
@@ -487,9 +492,13 @@ body {
   .maplibregl-ctrl-top-right {
     margin-top: env(safe-area-inset-top, 0px);
   }
-  .maplibregl-ctrl-bottom-left,
-  .maplibregl-ctrl-bottom-right {
+  .maplibregl-ctrl-bottom-left {
     margin-bottom: calc(var(--hud-nav-h) + 8px) !important;
+  }
+  /* Stack the attribution above the scale so the scale stays readable
+     on its own row instead of being clipped by the expanded (i) text. */
+  .maplibregl-ctrl-bottom-right {
+    margin-bottom: calc(var(--hud-nav-h) + 8px + 32px) !important;
   }
 }
 
