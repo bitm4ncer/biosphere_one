@@ -815,6 +815,19 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   const [timelineState, setTimelineState] = useState<TimelineState>({ kind: "idle" });
   const [weatherFrameIndex, setWeatherFrameIndex] = useState(0);
   const [weatherPlaying, setWeatherPlaying] = useState(false);
+  // Debug HUD activation: append `?debug=1` to the URL. Reads once on
+  // mount; flipping the flag at runtime requires a reload.
+  const [debugOn] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return new URLSearchParams(window.location.search).get("debug") === "1";
+  });
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [debugTick, setDebugTick] = useState(0);
+  useEffect(() => {
+    if (!debugOn) return;
+    const id = window.setInterval(() => setDebugTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [debugOn]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   type SidebarPane = "control" | "hiking";
   const [activeSidebar, setActiveSidebar] = useState<SidebarPane | null>(() => {
@@ -994,11 +1007,30 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     };
     window.addEventListener("unhandledrejection", onUnhandled);
 
+    // Debug HUD: capture MapLibre errors (tile load failures, source
+    // creation issues, etc.) so the user can read them on-screen via
+    // ?debug=1 instead of needing devtools.
+    const onMapError = (e: maplibregl.ErrorEvent) => {
+      const sourceId =
+        (e as unknown as { sourceId?: string }).sourceId ?? "?";
+      const url =
+        (e as unknown as { error?: { url?: string } }).error?.url ?? "";
+      const msg = e.error?.message ?? String(e.error ?? "unknown");
+      setDebugLog((prev) =>
+        [
+          `[map.error src=${sourceId}] ${msg}${url ? ` → ${url.slice(-90)}` : ""}`,
+          ...prev,
+        ].slice(0, 12),
+      );
+    };
+    map.on("error", onMapError);
+
     const resizeObserver = new ResizeObserver(() => map.resize());
     resizeObserver.observe(containerRef.current);
 
     return () => {
       window.removeEventListener("unhandledrejection", onUnhandled);
+      map.off("error", onMapError);
       resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
@@ -2140,6 +2172,26 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
           </svg>
         </button>
       </nav>
+
+      {debugOn && (
+        <DebugHud
+          tick={debugTick}
+          mapRef={mapRef}
+          activeOverlay={activeOverlay}
+          weatherOn={weatherOn}
+          firesOn={firesOn}
+          ndviOn={ndviOn}
+          railwayOn={railwayOn}
+          weatherFramesCount={weatherFrames.length}
+          weatherManifestError={weatherManifestError}
+          weatherManifestLoaded={weatherManifest !== null}
+          lastBasemapKey={lastAppliedBasemapKeyRef.current}
+          basemapMode={basemapMode}
+          imageBasemapId={imageBasemapId}
+          activeOverlayId={active}
+          log={debugLog}
+        />
+      )}
     </div>
   );
 }
@@ -3075,6 +3127,97 @@ function SnapshotCalendar({ snapshots, activeIndex, onSelect }: SnapshotCalendar
         <span className="inline-block h-2 w-2 rounded-full bg-amber-400" /> partly
         <span className="inline-block h-2 w-2 rounded-full bg-neutral-500" /> cloudy
       </div>
+    </div>
+  );
+}
+
+interface DebugHudProps {
+  tick: number;
+  mapRef: { current: MLMap | null };
+  activeOverlay: OverlayKind | null;
+  weatherOn: boolean;
+  firesOn: boolean;
+  ndviOn: boolean;
+  railwayOn: boolean;
+  weatherFramesCount: number;
+  weatherManifestError: string | null;
+  weatherManifestLoaded: boolean;
+  lastBasemapKey: string | null;
+  basemapMode: BasemapMode;
+  imageBasemapId: string;
+  activeOverlayId: string;
+  log: string[];
+}
+
+function DebugHud({
+  tick,
+  mapRef,
+  activeOverlay,
+  weatherOn,
+  firesOn,
+  ndviOn,
+  railwayOn,
+  weatherFramesCount,
+  weatherManifestError,
+  weatherManifestLoaded,
+  lastBasemapKey,
+  basemapMode,
+  imageBasemapId,
+  activeOverlayId,
+  log,
+}: DebugHudProps) {
+  // tick is read so the effect re-runs every second; eslint silenced via use.
+  void tick;
+  const map = mapRef.current;
+  let layerIds: string[] = [];
+  let sourceIds: string[] = [];
+  let styleLoaded = false;
+  let zoom = 0;
+  if (map) {
+    try {
+      const style = map.getStyle();
+      layerIds = style?.layers?.map((l) => l.id) ?? [];
+      sourceIds = Object.keys(style?.sources ?? {});
+      styleLoaded = map.isStyleLoaded() ?? false;
+      zoom = Math.round(map.getZoom() * 10) / 10;
+    } catch {
+      // Style not yet ready.
+    }
+  }
+  const firesLayerOnMap = layerIds.includes("fires-layer");
+  const weatherLayerOnMap = layerIds.includes("weather-layer");
+  return (
+    <div
+      className="pointer-events-auto absolute bottom-2 left-2 z-[60] max-w-[92vw] overflow-auto rounded border border-amber-400/50 bg-black/85 p-2 font-mono text-[10px] leading-tight text-amber-100 shadow-lg"
+      style={{ maxHeight: "60vh" }}
+    >
+      <div className="mb-1 font-semibold text-amber-300">DEBUG HUD · ?debug=0 to hide</div>
+      <div>active basemap: {activeOverlayId} (mode={basemapMode}, image={imageBasemapId})</div>
+      <div>activeOverlay: {String(activeOverlay)} · style.loaded: {String(styleLoaded)} · z={zoom}</div>
+      <div>
+        toggles: clouds={String(weatherOn)} fires={String(firesOn)} rail={String(railwayOn)} ndvi={String(ndviOn)}
+      </div>
+      <div>
+        layer present: fires-layer={String(firesLayerOnMap)} · weather-layer={String(weatherLayerOnMap)}
+      </div>
+      <div>
+        manifest: loaded={String(weatherManifestLoaded)} · frames={weatherFramesCount} · err={weatherManifestError ?? "none"}
+      </div>
+      <div>last basemap key: {lastBasemapKey ?? "(none)"}</div>
+      <div className="mt-1">layers ({layerIds.length}): {layerIds.join(", ") || "(none)"}</div>
+      <div>sources ({sourceIds.length}): {sourceIds.join(", ") || "(none)"}</div>
+      {log.length > 0 && (
+        <>
+          <div className="mt-1 text-amber-300">recent map.error events:</div>
+          <ul className="list-disc pl-4">
+            {log.map((line, i) => (
+              <li key={i} className="break-all">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
     </div>
   );
 }
