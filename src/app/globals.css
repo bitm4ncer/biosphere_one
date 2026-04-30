@@ -238,6 +238,12 @@ body {
 }
 
 /* ── Mobile bottom nav (panel switcher dock) ────────────────────────── */
+:root {
+  /* Total height of the mobile bottom-nav including safe-area padding.
+     Used by the bottom-sheet to anchor flush against the nav top edge. */
+  --hud-nav-h: calc(60px + env(safe-area-inset-bottom, 0px));
+}
+
 .hud-bottom-nav {
   position: fixed;
   left: 0;
@@ -245,10 +251,13 @@ body {
   bottom: 0;
   z-index: 11;
   display: none;
+  height: var(--hud-nav-h);
   gap: 6px;
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
   background: var(--hud-surface-solid);
-  border-top: 1px solid var(--hud-border);
+  /* Use an inset shadow as the top divider so the line doesn't add to the
+     box dimensions and break alignment with the bottom-sheet. */
+  box-shadow: 0 -1px 0 var(--hud-border);
   backdrop-filter: blur(10px);
   pointer-events: auto;
 }
@@ -418,7 +427,7 @@ body {
   }
   .maplibregl-ctrl-bottom-left,
   .maplibregl-ctrl-bottom-right {
-    margin-bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+    margin-bottom: var(--hud-nav-h) !important;
   }
 }
 

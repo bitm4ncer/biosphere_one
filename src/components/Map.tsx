@@ -1795,7 +1795,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 
       {/* geolocate status banner (diagnostic — bottom center, above scale) */}
       {(geoStatus || geoHeading) && (
-        <div className="pointer-events-auto absolute bottom-[calc(60px+env(safe-area-inset-bottom,0px)+12px)] md:bottom-3 left-1/2 z-10 -translate-x-1/2">
+        <div className="pointer-events-auto absolute bottom-[calc(var(--hud-nav-h)+12px)] md:bottom-3 left-1/2 z-10 -translate-x-1/2">
           <div className="hud-panel flex items-center gap-2 px-3 py-1.5 text-[11px] text-[color:var(--hud-text)]">
             <span className="hud-corner-tr" aria-hidden />
             <span className="hud-corner-br" aria-hidden />
@@ -1828,7 +1828,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
         className={[
           "absolute z-10 flex w-full",
           "left-0 right-0 md:left-auto md:right-0",
-          "bottom-[calc(60px+env(safe-area-inset-bottom,0px))] md:bottom-0 md:top-0",
+          "bottom-[var(--hud-nav-h)] md:bottom-0 md:top-0",
           "md:max-w-[340px]",
           "rounded-t-xl md:rounded-none",
           "border-t md:border-t-0 border-[color:var(--hud-border)]",
@@ -1838,7 +1838,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
             ? "translate-y-full md:translate-y-0"
             : "translate-y-0",
           sheetExpanded
-            ? "h-[calc(100%-60px-env(safe-area-inset-bottom,0px))]"
+            ? "h-[calc(100%-var(--hud-nav-h))]"
             : "h-[50dvh]",
           "md:h-auto",
           sidebarOpen
