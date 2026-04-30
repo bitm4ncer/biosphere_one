@@ -2142,6 +2142,61 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           className="hud-bottom-sheet-grabber"
         />
 
+        {/* In-sheet tabs — always visible on mobile, hidden on desktop */}
+        <nav className="hud-sheet-tabs" aria-label="Panel switcher">
+          <button
+            type="button"
+            onClick={() => selectPane("control")}
+            data-active={activePane === "control" && sidebarOpen}
+            aria-pressed={activePane === "control" && sidebarOpen}
+            aria-label="Map Controls"
+            className="hud-sheet-tab"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              aria-hidden
+            >
+              <circle cx="8" cy="8" r="6.2" />
+              <ellipse cx="8" cy="8" rx="6.2" ry="2.6" />
+              <ellipse cx="8" cy="8" rx="2.6" ry="6.2" />
+              <line x1="1.8" y1="8" x2="14.2" y2="8" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => selectPane("hiking")}
+            data-active={activePane === "hiking" && sidebarOpen}
+            aria-pressed={activePane === "hiking" && sidebarOpen}
+            aria-label="Routes"
+            className="hud-sheet-tab"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M5 2 L5 14" />
+              <path
+                d="M5 3 L13 5 L5 7 Z"
+                fill="currentColor"
+                fillOpacity="0.45"
+              />
+            </svg>
+          </button>
+        </nav>
+
         {/* panel body — visible only when expanded */}
         <div
           className="hud-sidebar hud-scanlines flex min-w-0 flex-1 flex-col overflow-hidden"
@@ -2314,63 +2369,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             )}
           </div>
         </div>
-
-        {/* In-sheet tabs — pinned to the bottom of the sheet so they
-            sit just above the home indicator. mt-auto keeps them at
-            the bottom even in peek state when the body is hidden. */}
-        <nav className="hud-sheet-tabs mt-auto" aria-label="Panel switcher">
-          <button
-            type="button"
-            onClick={() => selectPane("control")}
-            data-active={activePane === "control" && sidebarOpen}
-            aria-pressed={activePane === "control" && sidebarOpen}
-            aria-label="Map Controls"
-            className="hud-sheet-tab"
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              aria-hidden
-            >
-              <circle cx="8" cy="8" r="6.2" />
-              <ellipse cx="8" cy="8" rx="6.2" ry="2.6" />
-              <ellipse cx="8" cy="8" rx="2.6" ry="6.2" />
-              <line x1="1.8" y1="8" x2="14.2" y2="8" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => selectPane("hiking")}
-            data-active={activePane === "hiking" && sidebarOpen}
-            aria-pressed={activePane === "hiking" && sidebarOpen}
-            aria-label="Routes"
-            className="hud-sheet-tab"
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M5 2 L5 14" />
-              <path
-                d="M5 3 L13 5 L5 7 Z"
-                fill="currentColor"
-                fillOpacity="0.45"
-              />
-            </svg>
-          </button>
-        </nav>
       </aside>
 
       {debugOn && (
