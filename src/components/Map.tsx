@@ -862,11 +862,16 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
 
     const initial = BASEMAPS.find((b) => b.id === active) ?? BASEMAPS[0];
     const initialVariantId = basemapVariants[initial.id];
+    const initialOffset = initial.id === "gibs-today" ? liveBasemapDayOffset : 0;
+    // Seed the ref so the post-mount basemap-apply effect skips the
+    // redundant setStyle that would otherwise wipe pending overlay
+    // registrations.
+    lastAppliedBasemapKeyRef.current = `${initial.id}|${initialVariantId ?? ""}|${initialOffset}`;
     const map = new maplibregl.Map({
       container: containerRef.current,
       style:
         initial.kind === "raster"
-          ? rasterStyle(initial, initialVariantId, liveBasemapDayOffset)
+          ? rasterStyle(initial, initialVariantId, initialOffset)
           : initial.url,
       center: view.center,
       zoom: view.zoom,
@@ -964,12 +969,27 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     };
   }, []);
 
+  // Tracks the last basemap+variant+offset combo we actually applied via
+  // setStyle. The map-init effect already builds the initial style with
+  // these values, so the post-mount apply effect would otherwise issue a
+  // redundant setStyle that races with overlay registration (Fires /
+  // Clouds add via map.once("style.load") would fire against a style
+  // that's about to be replaced, then never see the replacement load).
+  const lastAppliedBasemapKeyRef = useRef<string | null>(null);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const basemap = BASEMAPS.find((b) => b.id === active);
     if (!basemap) return;
-    applyBasemap(map, basemap, activeVariantId, liveBasemapDayOffset);
+    // dayOffset only matters for the gibs-today basemap; treat it as 0
+    // for everything else so an unrelated slider drag doesn't restyle
+    // the rendered basemap and wipe overlays.
+    const effectiveOffset = active === "gibs-today" ? liveBasemapDayOffset : 0;
+    const key = `${active}|${activeVariantId ?? ""}|${effectiveOffset}`;
+    if (lastAppliedBasemapKeyRef.current === key) return;
+    lastAppliedBasemapKeyRef.current = key;
+    applyBasemap(map, basemap, activeVariantId, effectiveOffset);
 
     const reapply = () => {
       map.setProjection({ type: projection });
@@ -1179,6 +1199,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     host: string;
     satelliteInfrared: RadarFrame[];
   } | null>(null);
+  const [weatherManifestError, setWeatherManifestError] = useState<string | null>(null);
   // Hybrid 256 → 512 lazyload. 256 paints first; we bump to 512 once the
   // initial paint settles (sharper imagery loads in the background).
   const [weatherTileSize, setWeatherTileSize] = useState<256 | 512>(
@@ -1193,6 +1214,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
   useEffect(() => {
     if (!weatherOn) {
       setWeatherManifest(null);
+      setWeatherManifestError(null);
       setWeatherTileSize(CLOUDS_TILE_SIZE_FAST);
       return;
     }
@@ -1206,9 +1228,15 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
           host: wm.host,
           satelliteInfrared: wm.satelliteInfrared,
         });
+        setWeatherManifestError(null);
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
         console.warn("[clouds]", err);
+        if (!cancelled) {
+          setWeatherManifestError(
+            (err as Error).message || "RainViewer unreachable",
+          );
+        }
       }
     };
     load();
@@ -1283,11 +1311,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
       ensureWeatherLayer(map, currentWeatherUrls, weatherOpacity, weatherTileSize);
       updateWeatherTiles(map, currentWeatherUrls);
     };
-    if (map.isStyleLoaded()) {
-      apply();
-    } else {
-      map.once("style.load", apply);
-    }
+    if (map.isStyleLoaded()) apply();
     map.on("style.load", apply);
     return () => {
       map.off("style.load", apply);
@@ -1974,6 +1998,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                     isPlaying: weatherPlaying,
                     onPlayingChange: setWeatherPlaying,
                     loading: weatherLoading,
+                    error: weatherManifestError,
                   }}
                 />
 
@@ -2334,6 +2359,7 @@ interface OverlayPanelProps {
     isPlaying: boolean;
     onPlayingChange: (p: boolean) => void;
     loading: boolean;
+    error: string | null;
   };
 }
 
@@ -2427,6 +2453,17 @@ function OverlayPanel({
               </button>
             </div>
           </div>
+        )}
+
+        {active === "clouds" && f.error && (
+          <p className="max-w-[260px] break-words text-[11px] text-[color:var(--hud-danger)]">
+            Cloud radar unavailable: {f.error}
+          </p>
+        )}
+        {active === "clouds" && !f.error && f.frames.length === 0 && (
+          <p className="max-w-[260px] text-[11px] text-[color:var(--hud-text-muted)]">
+            Loading live cloud frames…
+          </p>
         )}
 
         {active === "clouds" && f.frames.length > 0 && currentFrame && (
