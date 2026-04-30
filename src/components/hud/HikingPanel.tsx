@@ -270,7 +270,7 @@ export function HikingPanel({ mapRef }: Props) {
                   type="button"
                   onClick={() => selectCandidate(c.id)}
                   data-active={active}
-                  className="hud-basemap-btn flex flex-col items-stretch gap-1 !p-2"
+                  className="hud-basemap-btn flex flex-col items-stretch gap-1 !rounded-2xl !p-3"
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-[11px] font-semibold">

@@ -206,50 +206,57 @@ body {
   transform: translateX(12px);
 }
 
-/* ── Mobile bottom nav (panel switcher dock) ────────────────────────── */
+/* ── Mobile bottom nav (floating panel-switcher pills) ─────────────── */
 :root {
-  /* Total height of the mobile bottom-nav including safe-area padding.
-     Used by the bottom-sheet to anchor flush against the nav top edge. */
-  --hud-nav-h: calc(60px + env(safe-area-inset-bottom, 0px));
+  /* Vertical room the floating bottom-nav reserves on mobile, used by the
+     bottom-sheet to sit above it. 16 px gap from screen + 56 px button +
+     8 px breathing room + iOS home-indicator safe-area. */
+  --hud-nav-h: calc(80px + env(safe-area-inset-bottom, 0px));
+  /* Vertical room the floating top-bar reserves: notch safe-area + 36 px
+     icon/search height + 12 px padding + 8 px gap below. */
+  --hud-topbar-h: calc(56px + env(safe-area-inset-top, 0px));
 }
 
 .hud-bottom-nav {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 11;
+  left: 50%;
+  right: auto;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  transform: translateX(-50%);
+  z-index: 12;
   display: none;
-  height: var(--hud-nav-h);
-  gap: 6px;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
-  background: var(--hud-surface-solid);
-  /* Use an inset shadow as the top divider so the line doesn't add to the
-     box dimensions and break alignment with the bottom-sheet. */
-  box-shadow: 0 -1px 0 var(--hud-border);
-  backdrop-filter: blur(10px);
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
   pointer-events: auto;
 }
 
 .hud-bottom-nav-btn {
-  flex: 1;
-  min-height: 48px;
+  width: 56px;
+  height: 56px;
+  min-height: 56px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 8px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  padding: 0;
   color: var(--hud-text);
-  background: transparent;
+  background: var(--hud-surface-solid);
   border: 1px solid var(--hud-border);
   border-radius: 9999px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease,
+    transform 120ms ease;
+}
+
+.hud-bottom-nav-btn:active {
+  transform: scale(0.96);
 }
 
 .hud-bottom-nav-btn:active {
@@ -615,6 +622,18 @@ input[type="range"].hud-slider::-moz-range-thumb {
   transition: background 120ms ease, color 120ms ease;
 }
 
+/* Round only the outer edges so the active inset shadow follows the
+   pill shape instead of poking past the container corners. */
+.hud-tab:first-child {
+  border-radius: 9999px 0 0 9999px;
+}
+.hud-tab:last-child {
+  border-radius: 0 9999px 9999px 0;
+}
+.hud-tab:first-child:last-child {
+  border-radius: 9999px;
+}
+
 /* Hairline divider between adjacent tabs in a connected row. */
 .hud-tab + .hud-tab {
   border-left: 1px solid var(--hud-border);
@@ -792,6 +811,17 @@ input[type="range"].hud-slider::-moz-range-thumb {
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Round only the outer edges so the active highlight follows the pill. */
+.hud-basemap-switch-btn:first-child {
+  border-radius: 9999px 0 0 9999px;
+}
+.hud-basemap-switch-btn:last-child {
+  border-radius: 0 9999px 9999px 0;
+}
+.hud-basemap-switch-btn:first-child:last-child {
+  border-radius: 9999px;
 }
 
 /* Hairline divider between adjacent buttons inside the connected pill. */

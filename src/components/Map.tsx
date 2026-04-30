@@ -18,6 +18,7 @@ import { fetchDayOverlay } from "@/lib/sentinel/latest-overlay";
 import { searchCatalog, type Snapshot } from "@/lib/sentinel/catalog";
 import type { Bbox, Credentials } from "@/types/sentinel";
 import { SettingsGear } from "./SettingsGear";
+import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
 import {
   gibsDateNDaysAgo,
@@ -95,7 +96,6 @@ type TimelineState =
 
 interface Props {
   credentials: Credentials | null;
-  flyTarget?: GeocodeResult | null;
   onOpenSettings?: () => void;
 }
 
@@ -761,7 +761,8 @@ function buildLiveLocationEl(): {
   return { root, scaler, cone };
 }
 
-export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
+export function LiveMap({ credentials, onOpenSettings }: Props) {
+  const [flyTarget, setFlyTarget] = useState<GeocodeResult | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
@@ -1817,15 +1818,30 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* image / hybrid / vector basemap switch (top-left of map) */}
-      <BasemapSwitch mode={basemapMode} onModeChange={setBasemapMode} />
+      {/* Floating top bar — icon, search field, basemap-mode switch */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-2 px-3 pt-[max(env(safe-area-inset-top,0px),12px)]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={`${ICON_BASE_PATH}/icon.svg`}
+          alt="Biosphere1"
+          width={36}
+          height={36}
+          className="pointer-events-auto block h-9 w-9 shrink-0"
+        />
+        <div className="pointer-events-auto min-w-0 flex-1">
+          <SearchBox onSelect={setFlyTarget} />
+        </div>
+        <div className="pointer-events-auto shrink-0">
+          <BasemapSwitch mode={basemapMode} onModeChange={setBasemapMode} />
+        </div>
+      </div>
 
-      {/* Rail-network loading pill (top-right, only while busy or throttled) */}
+      {/* Rail-network loading pill — sits below the floating top bar. */}
       {railwayOn
         && railStyle === "lines"
         && (railNetworkStatus.inFlight > 0
           || railNetworkStatus.cooldownUntil > Date.now()) && (
-        <div className="pointer-events-none absolute right-3 top-3 z-10">
+        <div className="pointer-events-none absolute right-3 top-[calc(env(safe-area-inset-top,0px)+62px)] z-20">
           <div className="hud-panel hud-mono flex items-center gap-2 px-3 py-1.5 text-[10px] text-[color:var(--hud-text)]">
             <span className="hud-corner-tr" aria-hidden />
             <span className="hud-corner-br" aria-hidden />
@@ -1899,7 +1915,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
             ? "translate-y-full md:translate-y-0"
             : "translate-y-0",
           sheetExpanded
-            ? "h-[calc(100%-var(--hud-nav-h))]"
+            ? "h-[calc(100%-var(--hud-nav-h)-var(--hud-topbar-h))]"
             : "h-[50dvh]",
           "md:h-auto",
           sidebarOpen
@@ -1932,17 +1948,18 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
             className="hud-bottom-sheet-grabber"
           />
 
-          <div className="flex items-center justify-between border-b border-[color:var(--hud-border)] px-3 py-0.5 md:py-2">
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center border-b border-[color:var(--hud-border)] px-3 py-0.5 md:py-2">
+            <span className="hud-mono hidden text-[10px] text-[color:var(--hud-text-muted)] md:inline">
+              BIOSPHERE · v1
+            </span>
+            <div className="md:hidden" />
+            <div className="flex min-w-0 items-center justify-self-center gap-2">
               <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]" />
               <span className="hud-label truncate">
                 {activeSidebar === "hiking" ? "Hiking" : "Control Deck"}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="hud-mono hidden text-[10px] text-[color:var(--hud-text-muted)] md:inline">
-                BIOSPHERE · v1
-              </span>
+            <div className="flex items-center justify-self-end gap-2">
               {/* Expand toggle — mobile only */}
               <button
                 type="button"
@@ -2354,29 +2371,29 @@ const SEGMENTS: { key: BasemapMode; label: string; icon: ReactNode }[] = [
   },
 ];
 
+const ICON_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 function BasemapSwitch({ mode, onModeChange }: BasemapSwitchProps) {
   return (
-    <div className="pointer-events-auto absolute left-3 top-3 z-10">
-      <div
-        className="hud-basemap-switch"
-        role="group"
-        aria-label="Basemap mode"
-      >
-        {SEGMENTS.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            onClick={() => onModeChange(s.key)}
-            data-active={mode === s.key}
-            className="hud-basemap-switch-btn"
-            aria-pressed={mode === s.key}
-            aria-label={s.label}
-            title={s.label}
-          >
-            {s.icon}
-          </button>
-        ))}
-      </div>
+    <div
+      className="hud-basemap-switch pointer-events-auto"
+      role="group"
+      aria-label="Basemap mode"
+    >
+      {SEGMENTS.map((s) => (
+        <button
+          key={s.key}
+          type="button"
+          onClick={() => onModeChange(s.key)}
+          data-active={mode === s.key}
+          className="hud-basemap-switch-btn"
+          aria-pressed={mode === s.key}
+          aria-label={s.label}
+          title={s.label}
+        >
+          {s.icon}
+        </button>
+      ))}
     </div>
   );
 }
@@ -2655,7 +2672,7 @@ function TimelinePanel(props: TimelinePanelProps) {
             data-active={tab === "live"}
             onClick={() => setTab("live")}
           >
-            Live
+            Daily
           </button>
           <button
             type="button"
@@ -2715,15 +2732,38 @@ function TimelineYearTab({
 }) {
   const s2 = BASEMAPS.find((b) => b.id === "s2cloudless");
   if (!s2 || !s2.variants) return null;
-  // When S2 isn't the active photo basemap, the chip-row's "active" dot
-  // is meaningless; pass an empty selectedId so nothing is highlighted.
+  const options = s2.variants.options;
   const selectedId = isS2Active ? s2ActiveVariant : "";
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <p className="text-[10px] text-[color:var(--hud-text-muted)]">
         Sentinel-2 cloudless · 10 m · annual mosaic
       </p>
-      <VariantChips basemap={s2} selectedId={selectedId} onSelect={onSelectYear} />
+      <div
+        className="hud-tab-row"
+        style={{
+          gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))`,
+        }}
+        role="radiogroup"
+        aria-label="Sentinel-2 year"
+      >
+        {options.map((o) => {
+          const active = o.id === selectedId;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              data-active={active}
+              onClick={() => onSelectYear(o.id)}
+              className="hud-tab hud-mono"
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
       {!isS2Active && (
         <p className="text-[10px] text-[color:var(--hud-text-muted)]">
           Tap a year to switch the photo basemap to Sentinel-2.
@@ -2753,18 +2793,55 @@ function TimelineLiveTab({
     }, 600);
     return () => window.clearInterval(id);
   }, [playing, offset, onChange]);
-  // Render the date label corresponding to the current offset.
-  const labelDate = (() => {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - (offset + 1));
-    return d.toISOString().slice(0, 10);
-  })();
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() - (offset + 1));
+  const niceDate = date.toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+  const relative = offset === 0 ? "yesterday" : `${offset + 1} days ago`;
+  const setOffset = (next: number) => {
+    if (!isActive) onActivate();
+    setPlaying(false);
+    onChange(Math.max(0, Math.min(max, next)));
+  };
   return (
     <div className="flex flex-col gap-2">
       <p className="text-[10px] text-[color:var(--hud-text-muted)]">
         NOAA-20 VIIRS daily true-color · step through the past 14 days
       </p>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setOffset(offset + 1)}
+          disabled={offset >= max}
+          className="hud-btn-ghost"
+          aria-label="Older day"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M6.5 2 L3 5 L6.5 8" />
+          </svg>
+        </button>
+        <div className="flex flex-1 flex-col items-center leading-tight">
+          <span className="hud-mono text-[13px] text-[color:var(--hud-text)]">
+            {niceDate}
+          </span>
+          <span className="text-[10px] text-[color:var(--hud-text-muted)]">
+            {relative}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOffset(offset - 1)}
+          disabled={offset <= 0}
+          className="hud-btn-ghost"
+          aria-label="Newer day"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M3.5 2 L7 5 L3.5 8" />
+          </svg>
+        </button>
         <button
           type="button"
           onClick={() => {
@@ -2785,26 +2862,6 @@ function TimelineLiveTab({
             </svg>
           )}
         </button>
-        <input
-          type="range"
-          min={0}
-          max={max}
-          step={1}
-          value={offset}
-          onChange={(e) => {
-            if (!isActive) onActivate();
-            setPlaying(false);
-            onChange(Number(e.target.value));
-          }}
-          className="hud-slider flex-1"
-          style={{ ["--hud-fill" as string]: `${Math.round((offset / max) * 100)}%` }}
-        />
-      </div>
-      <div className="flex items-center justify-between text-[10px] text-[color:var(--hud-text-muted)]">
-        <span className="hud-mono">{labelDate}</span>
-        <span>
-          {offset === 0 ? "yesterday" : `${offset + 1} days ago`}
-        </span>
       </div>
       {!isActive && (
         <button
