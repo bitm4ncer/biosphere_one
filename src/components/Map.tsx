@@ -1044,26 +1044,37 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     });
   }, []));
 
+  // Remember whether the user prefers the sheet at half or full when
+  // it opens from peek. Once they expand to full, subsequent opens come
+  // back at full instead of resetting to half.
+  const [preferredOpen, setPreferredOpen] = useState<"half" | "full">("half");
+
   // Tab tap handling — like Apple/Google Maps. Tapping the active tab
   // collapses the sheet to peek; tapping the other switches pane and
-  // ensures the sheet is at least half-open.
+  // ensures the sheet is open at the user's preferred size.
   const selectPane = (pane: SidebarPane) => {
     if (pane === activePane) {
-      setSheetState((s) => (s === "peek" ? "half" : "peek"));
+      setSheetState((s) => (s === "peek" ? preferredOpen : "peek"));
       return;
     }
     setActivePane(pane);
-    setSheetState((s) => (s === "peek" ? "half" : s));
+    setSheetState((s) => (s === "peek" ? preferredOpen : s));
   };
 
   const toggleExpand = () => {
-    setSheetState((s) => (s === "full" ? "half" : "full"));
+    if (sheetState === "full") {
+      setSheetState("half");
+      setPreferredOpen("half");
+    } else {
+      setSheetState("full");
+      setPreferredOpen("full");
+    }
   };
 
   const collapseToPeek = () => setSheetState("peek");
 
   const cyclePeekHalf = () => {
-    setSheetState((s) => (s === "peek" ? "half" : "peek"));
+    setSheetState((s) => (s === "peek" ? preferredOpen : "peek"));
   };
 
   useEffect(() => {
@@ -2184,14 +2195,8 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           aria-hidden={!sidebarOpen}
         >
           <div className="grid grid-cols-[1fr_auto_1fr] items-center border-y border-[color:var(--hud-border)] px-3 h-9 md:h-10">
-            <div className="hud-mono text-[10px] text-[color:var(--hud-text-muted)]">
-              <span className="hidden md:inline">BIOSPHERE · v1</span>
-            </div>
-            <span className="hud-label justify-self-center truncate text-center">
-              {activePane === "hiking" ? "Routes" : "Map Controls"}
-            </span>
-            <div className="flex items-center justify-self-end gap-2">
-              {/* Expand toggle — mobile only */}
+            <div className="justify-self-start">
+              {/* Expand / shrink — mobile only, on the left */}
               <button
                 type="button"
                 onClick={toggleExpand}
@@ -2228,8 +2233,18 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                   )}
                 </svg>
               </button>
-              {/* Collapse to peek — mobile only; chevron-down to mirror the
-                  drag-handle action since it minimises rather than dismisses. */}
+              {/* Brand badge — desktop only */}
+              <span className="hud-mono hidden text-[10px] text-[color:var(--hud-text-muted)] md:inline">
+                BIOSPHERE · v1
+              </span>
+            </div>
+            <span className="hud-label justify-self-center truncate text-center">
+              {activePane === "hiking" ? "Routes" : "Map Controls"}
+            </span>
+            <div className="justify-self-end">
+              {/* Collapse to peek — mobile only, on the right; arrow-down
+                  mirrors the drag-handle action since it minimises rather
+                  than dismisses. */}
               <button
                 type="button"
                 onClick={collapseToPeek}
