@@ -790,7 +790,9 @@ input[type="range"].hud-slider::-moz-range-thumb {
 }
 
 /* Active indicator dot replaces the legacy left-edge bar so the rounded
-   pill silhouette stays clean. */
+   pill silhouette stays clean. Suppressed on .hud-card-flat (route
+   option cards) where the green border + tinted fill already read as
+   active without an extra accent. */
 .hud-basemap-btn[data-active="true"]::before {
   content: "";
   position: absolute;
@@ -802,6 +804,10 @@ input[type="range"].hud-slider::-moz-range-thumb {
   background: var(--hud-accent);
   box-shadow: 0 0 6px var(--hud-accent-glow);
   transform: translateY(-50%);
+}
+
+.hud-basemap-btn.hud-card-flat[data-active="true"]::before {
+  display: none;
 }
 
 /* When a selected entry is also the live (mode-active) one, brighten it */

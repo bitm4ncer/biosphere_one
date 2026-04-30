@@ -270,7 +270,7 @@ export function HikingPanel({ mapRef }: Props) {
                   type="button"
                   onClick={() => selectCandidate(c.id)}
                   data-active={active}
-                  className="hud-basemap-btn flex flex-col items-stretch gap-1 !rounded-2xl !p-3"
+                  className="hud-basemap-btn hud-card-flat flex flex-col items-stretch gap-1 !rounded-2xl !p-3"
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-[11px] font-semibold">
@@ -757,7 +757,7 @@ function SearchAdd({
         onChange={(e) => setQ(e.target.value)}
         onFocus={() => results.length > 0 && setOpen(true)}
         placeholder="Search a place…"
-        className="hud-search w-full px-2 py-1 text-[11px]"
+        className="hud-search w-full h-10 md:h-7 px-3 text-[11px]"
       />
       {busy && (
         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-[color:var(--hud-text-muted)]">
