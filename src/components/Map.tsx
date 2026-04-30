@@ -1871,7 +1871,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
             className="hud-bottom-sheet-grabber"
           />
 
-          <div className="flex items-center justify-between border-b border-[color:var(--hud-border)] px-3 py-2">
+          <div className="flex items-center justify-between border-b border-[color:var(--hud-border)] px-3 py-1 md:py-2">
             <div className="flex min-w-0 items-center gap-2">
               <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]" />
               <span className="hud-label truncate">
@@ -2005,6 +2005,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                     if (basemapMode === "vector") setBasemapMode("photo");
                   }}
                   credentials={credentials !== null}
+                  onOpenSettings={onOpenSettings}
                   zoomOk={view.zoom >= MIN_FETCH_ZOOM}
                   minZoom={MIN_FETCH_ZOOM}
                   state={timelineState}
@@ -2020,13 +2021,6 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
               </>
             )}
           </div>
-
-          {onOpenSettings && (
-            <div className="flex items-center justify-between border-t border-[color:var(--hud-border)] px-3 py-2">
-              <span className="hud-label">Credentials</span>
-              <SettingsGear onOpen={onOpenSettings} />
-            </div>
-          )}
         </div>
       </aside>
 
@@ -2548,6 +2542,7 @@ interface TimelinePanelProps {
   onActivateLive: () => void;
   // Snapshots tab
   credentials: boolean;
+  onOpenSettings?: () => void;
   zoomOk: boolean;
   minZoom: number;
   state: TimelineState;
@@ -2616,6 +2611,7 @@ function TimelinePanel(props: TimelinePanelProps) {
         {tab === "snapshots" && (
           <TimelineSnapshotsTab
             credentials={props.credentials}
+            onOpenSettings={props.onOpenSettings}
             zoomOk={props.zoomOk}
             minZoom={props.minZoom}
             state={props.state}
@@ -2751,6 +2747,7 @@ function TimelineLiveTab({
 
 function TimelineSnapshotsTab({
   credentials,
+  onOpenSettings,
   zoomOk,
   minZoom,
   state,
@@ -2764,6 +2761,7 @@ function TimelineSnapshotsTab({
   onOpacityChange,
 }: {
   credentials: boolean;
+  onOpenSettings?: () => void;
   zoomOk: boolean;
   minZoom: number;
   state: TimelineState;
@@ -2786,7 +2784,7 @@ function TimelineSnapshotsTab({
   }
   return (
     <div className="flex flex-col items-stretch gap-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         {state.kind === "searching" || state.kind === "loading" ? (
           <span
             className="inline-block h-2 w-2 animate-pulse rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]"
@@ -2795,15 +2793,18 @@ function TimelineSnapshotsTab({
         ) : (
           <span />
         )}
-        {active && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="text-[10px] uppercase tracking-wider text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
-          >
-            clear
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {active && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="text-[10px] uppercase tracking-wider text-[color:var(--hud-text-muted)] hover:text-[color:var(--hud-accent)]"
+            >
+              clear
+            </button>
+          )}
+          {onOpenSettings && <SettingsGear onOpen={onOpenSettings} />}
+        </div>
       </div>
 
       {!active && (
@@ -2819,7 +2820,7 @@ function TimelineSnapshotsTab({
 
       {!credentials && (
         <p className="max-w-[260px] text-[11px] text-[color:var(--hud-text-muted)]">
-          Add credentials below to load snapshots.
+          Tap the gear icon to add Copernicus credentials.
         </p>
       )}
       {credentials && !zoomOk && !active && (

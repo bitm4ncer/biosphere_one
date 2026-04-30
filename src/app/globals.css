@@ -304,7 +304,7 @@ body {
   display: none;
   align-items: center;
   justify-content: center;
-  height: 18px;
+  height: 12px;
   flex-shrink: 0;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -312,8 +312,8 @@ body {
 
 .hud-bottom-sheet-grabber::before {
   content: "";
-  width: 40px;
-  height: 4px;
+  width: 36px;
+  height: 3px;
   border-radius: 999px;
   background: var(--hud-border-strong);
   opacity: 0.55;
@@ -329,8 +329,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: 1px solid var(--hud-border);
   background: transparent;
   color: var(--hud-text);
