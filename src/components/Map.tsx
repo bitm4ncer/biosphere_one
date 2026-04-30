@@ -168,9 +168,9 @@ function removeHybridOverlay(map: MLMap) {
   if (map.getSource(HYBRID_TRANSPORT_SOURCE_ID)) map.removeSource(HYBRID_TRANSPORT_SOURCE_ID);
 }
 
-// NASA GIBS GeoColor tile matrix `2km` has zoom range 0-6. MapLibre
-// overzooms past z=6 to keep the layer visible at higher zoom.
-const WEATHER_MAXZOOM = 6;
+// NASA GIBS GeoColor tile matrix `GoogleMapsCompatible_Level7` covers
+// z 0-7. MapLibre overzooms past z=7 to keep the layer visible higher.
+const WEATHER_MAXZOOM = 7;
 const WEATHER_TILE_SIZE = 256;
 
 function ensureWeatherLayer(map: MLMap, urls: string[], opacity: number) {

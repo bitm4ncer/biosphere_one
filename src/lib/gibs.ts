@@ -41,7 +41,8 @@ export function gibsDateNDaysAgo(n: number): string {
 /**
  * NASA GIBS GeoColor: live cloud imagery from geostationary satellites.
  * GOES-East covers Americas + Atlantic + western Europe at the disc's
- * eastern edge. Tile matrix `2km` (z 0-6); MapLibre overzooms past z=6.
+ * eastern edge. Tile matrix `GoogleMapsCompatible_Level7` (z 0-7) for
+ * the EPSG:3857 endpoint; MapLibre overzooms past z=7.
  *
  * The URL TIME segment must be aligned to 10-min boundaries.
  * GIBS publishes new GeoColor frames roughly 25-40 min after the
@@ -50,7 +51,7 @@ export function gibsDateNDaysAgo(n: number): string {
 export function gibsGeoColorUrl(opts: { time: string; satellite?: "east" | "west" }): string {
   const layer =
     opts.satellite === "west" ? "GOES-West_ABI_GeoColor" : "GOES-East_ABI_GeoColor";
-  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${opts.time}/2km/{z}/{y}/{x}.png`;
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${opts.time}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`;
 }
 
 export interface GibsLiveFrame {
