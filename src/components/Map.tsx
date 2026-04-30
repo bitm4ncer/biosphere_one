@@ -1952,21 +1952,25 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           activeSidebar === null ? "closed" : sheetExpanded ? "full" : "half"
         }
         className={[
-          "absolute z-10 flex w-full",
+          "fixed md:absolute z-10 flex w-full",
           "left-0 right-0 md:left-auto md:right-0",
           "bottom-[var(--hud-nav-h)] md:bottom-0 md:top-0",
+          // On mobile we anchor the top edge for the full state and let
+          // bottom + top determine the height (no calc()), so flex-row
+          // stretch on the aside can't collapse the inner panel.
+          sheetExpanded
+            ? "top-[var(--hud-topbar-h)]"
+            : "top-auto",
           "md:max-w-[340px]",
           "rounded-t-3xl md:rounded-none",
           "border-t md:border-t-0 border-[color:var(--hud-border)]",
-          "transition-[transform,height] md:transition-transform",
+          "transition-[transform,top,height] md:transition-transform",
           "duration-300 md:duration-200 ease-out will-change-transform",
           activeSidebar === null
             ? "translate-y-full md:translate-y-0"
             : "translate-y-0",
-          sheetExpanded
-            ? "h-[calc(100%-var(--hud-nav-h)-var(--hud-topbar-h))]"
-            : "h-[50dvh]",
-          "md:h-auto",
+          sheetExpanded ? "h-auto" : "h-[50dvh]",
+          "md:h-auto md:!top-0",
           sidebarOpen
             ? "md:translate-x-0"
             : "md:translate-x-[calc(100%-34px)]",
