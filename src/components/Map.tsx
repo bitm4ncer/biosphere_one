@@ -1977,8 +1977,8 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           <button
             type="button"
             onClick={() => selectPane("control")}
-            data-active={activePane === "control"}
-            aria-pressed={activePane === "control"}
+            data-active={activePane === "control" && sidebarOpen}
+            aria-pressed={activePane === "control" && sidebarOpen}
             aria-label="Control Deck"
             className="hud-sheet-tab"
           >
@@ -2001,8 +2001,8 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           <button
             type="button"
             onClick={() => selectPane("hiking")}
-            data-active={activePane === "hiking"}
-            aria-pressed={activePane === "hiking"}
+            data-active={activePane === "hiking" && sidebarOpen}
+            aria-pressed={activePane === "hiking" && sidebarOpen}
             aria-label="Hiking"
             className="hud-sheet-tab"
           >
