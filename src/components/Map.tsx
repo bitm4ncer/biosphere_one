@@ -1871,7 +1871,7 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
             className="hud-bottom-sheet-grabber"
           />
 
-          <div className="flex items-center justify-between border-b border-[color:var(--hud-border)] px-3 py-1 md:py-2">
+          <div className="flex items-center justify-between border-b border-[color:var(--hud-border)] px-3 py-0.5 md:py-2">
             <div className="flex min-w-0 items-center gap-2">
               <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]" />
               <span className="hud-label truncate">
