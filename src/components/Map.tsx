@@ -27,6 +27,7 @@ import {
 } from "@/lib/gibs";
 import {
   fetchWeatherMaps,
+  radarTileUrl,
   satelliteTileUrl,
   type RadarFrame,
 } from "@/lib/weather";
@@ -618,8 +619,14 @@ const NDVI_ATTRIBUTION =
 // every fire on the planet, including Europe / Africa / Asia.
 const FIRES_MAX_ZOOM = 9;
 
+// VIIRS Thermal Anomalies have a 24-48 h GIBS processing latency.
+// "Yesterday" routinely 400s for several hours each morning UTC. We
+// default to 2 days back for safety; if even that 400s the user can
+// step further back by setting `firesDateOffset` (planned escalation).
+const FIRES_DATE_OFFSET_DAYS = 2;
+
 function firesTileUrl(): string {
-  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_Thermal_Anomalies_375m_All/default/${gibsYesterday()}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`;
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_Thermal_Anomalies_375m_All/default/${gibsDateNDaysAgo(FIRES_DATE_OFFSET_DAYS)}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`;
 }
 
 function ensureFiresLayer(map: MLMap, opacity: number) {
@@ -1282,9 +1289,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   }, [weatherOn]);
 
   // RainViewer manifest (5-min memo'd in lib/weather.ts).
+  // We pull both radar (precipitation, reliable) and satellite IR (cloud
+  // cover — RainViewer has periodically returned 0 frames for this; we
+  // fall back to radar when that happens).
   const [weatherManifest, setWeatherManifest] = useState<{
     host: string;
     satelliteInfrared: RadarFrame[];
+    radarPast: RadarFrame[];
+    radarNowcast: RadarFrame[];
   } | null>(null);
   const [weatherManifestError, setWeatherManifestError] = useState<string | null>(null);
   // Hybrid 256 → 512 lazyload. 256 paints first; we bump to 512 once the
@@ -1314,6 +1326,8 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
         setWeatherManifest({
           host: wm.host,
           satelliteInfrared: wm.satelliteInfrared,
+          radarPast: wm.radarPast,
+          radarNowcast: wm.radarNowcast,
         });
         setWeatherManifestError(null);
       } catch (err) {
@@ -1352,20 +1366,34 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     urls: string[];
   }
 
+  // Whether the active source is satellite IR (cloud cover) or radar
+  // (precipitation). Decided per-render based on what the manifest
+  // actually contains: satellite if non-empty, else radar fallback.
+  const weatherSourceKind: "satellite" | "radar" = useMemo(() => {
+    if (!weatherManifest) return "satellite";
+    return weatherManifest.satelliteInfrared.length > 0 ? "satellite" : "radar";
+  }, [weatherManifest]);
+
   const weatherFrames: WeatherFrame[] = useMemo(() => {
     if (!weatherManifest) return [];
-    return weatherManifest.satelliteInfrared.map((f) => ({
+    const { host } = weatherManifest;
+    if (weatherSourceKind === "satellite") {
+      return weatherManifest.satelliteInfrared.map((f) => ({
+        time: f.time,
+        date: new Date(f.time * 1000).toISOString(),
+        urls: [satelliteTileUrl({ host, path: f.path, size: weatherTileSize })],
+      }));
+    }
+    // Radar fallback: past + nowcast, in chronological order.
+    return [
+      ...weatherManifest.radarPast,
+      ...weatherManifest.radarNowcast,
+    ].map((f) => ({
       time: f.time,
       date: new Date(f.time * 1000).toISOString(),
-      urls: [
-        satelliteTileUrl({
-          host: weatherManifest.host,
-          path: f.path,
-          size: weatherTileSize,
-        }),
-      ],
+      urls: [radarTileUrl({ host, path: f.path, size: weatherTileSize })],
     }));
-  }, [weatherManifest, weatherTileSize]);
+  }, [weatherManifest, weatherTileSize, weatherSourceKind]);
 
   // When fresh frames arrive (first load or 5-min refresh), snap the
   // playhead to the most-recent frame so the user always sees "now".
@@ -2106,6 +2134,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                     onPlayingChange: setWeatherPlaying,
                     loading: weatherLoading,
                     error: weatherManifestError,
+                    sourceKind: weatherSourceKind,
                   }}
                 />
 
@@ -2487,6 +2516,7 @@ interface OverlayPanelProps {
     onPlayingChange: (p: boolean) => void;
     loading: boolean;
     error: string | null;
+    sourceKind: "satellite" | "radar";
   };
 }
 
@@ -2524,7 +2554,9 @@ function OverlayPanel({
 
   const caption =
     active === "clouds"
-      ? "Live cloud cover · past 2 h + nowcast"
+      ? weatherProps.sourceKind === "satellite"
+        ? "Live cloud cover · past 2 h + nowcast"
+        : "Live precipitation radar · past 2 h + nowcast"
       : active === "rail"
         ? railStyle === "lines"
           ? railLineCaption
