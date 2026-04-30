@@ -846,16 +846,53 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
     });
   }, []));
 
+  // Match the bottom-sheet's transition duration for the slide animation
+  // when switching between panes (close-then-open) so it never snaps.
+  const SHEET_TRANSITION_MS = 300;
+  const switchTimerRef = useRef<number | null>(null);
+
   const toggleSidebar = (pane: SidebarPane) => {
-    setActiveSidebar((current) => (current === pane ? null : pane));
-    // Always (re)open at half height on mobile; desktop ignores this state.
+    if (switchTimerRef.current !== null) {
+      window.clearTimeout(switchTimerRef.current);
+      switchTimerRef.current = null;
+    }
     setSheetExpanded(false);
+    const current = activeSidebar;
+    if (current === pane) {
+      // Tap active button → slide out.
+      setActiveSidebar(null);
+      return;
+    }
+    if (current !== null) {
+      // Switching panes: slide the current one out, then slide the new
+      // one in with its content. Two-phase animation feels native.
+      setActiveSidebar(null);
+      switchTimerRef.current = window.setTimeout(() => {
+        setActiveSidebar(pane);
+        switchTimerRef.current = null;
+      }, SHEET_TRANSITION_MS);
+      return;
+    }
+    // Currently closed → slide in.
+    setActiveSidebar(pane);
   };
 
   const closeSidebar = () => {
+    if (switchTimerRef.current !== null) {
+      window.clearTimeout(switchTimerRef.current);
+      switchTimerRef.current = null;
+    }
     setActiveSidebar(null);
     setSheetExpanded(false);
   };
+
+  useEffect(() => {
+    return () => {
+      if (switchTimerRef.current !== null) {
+        window.clearTimeout(switchTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
