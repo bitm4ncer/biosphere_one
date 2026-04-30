@@ -241,29 +241,6 @@ export function HikingPanel({ mapRef }: Props) {
         </div>
       </HudPanel>
 
-      {/* Options */}
-      <HudPanel label="Options">
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="hud-label text-[9px]">Round-trip</span>
-            <ToggleSwitch
-              on={roundTrip}
-              onChange={setRoundTrip}
-              ariaLabel="Round-trip"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={reverseWaypoints}
-            disabled={waypoints.length < 2}
-            className="hud-btn-ghost !w-auto justify-center gap-1.5 self-start px-2 text-[10px] uppercase tracking-wider"
-          >
-            <ReverseIcon /> Reverse order
-          </button>
-          <ModeAndProfilePicker profile={profile} setProfile={setProfile} />
-        </div>
-      </HudPanel>
-
       {/* Candidates / actions */}
       {candidates.length > 0 && (
         <HudPanel label={finalized ? "Final route" : `Options · ${candidates.length}`}>
@@ -297,7 +274,7 @@ export function HikingPanel({ mapRef }: Props) {
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="text-[11px] font-semibold">
-                      {finalized ? "Selected" : `Option ${i + 1}`}
+                      {finalized ? "Selected" : `Route ${i + 1}`}
                       <span className="ml-1.5 text-[10px] font-normal text-[color:var(--hud-text-muted)]">
                         · {c.profile}
                       </span>
@@ -339,7 +316,7 @@ export function HikingPanel({ mapRef }: Props) {
             {!finalized && altCount > 0 && (
               <p className="text-[10px] text-[color:var(--hud-text-muted)]">
                 {altCount} alternative{altCount === 1 ? "" : "s"} drawn on map
-                — tap a dashed line or option above to switch.
+                — tap a dashed line or route above to switch.
               </p>
             )}
 
@@ -359,7 +336,7 @@ export function HikingPanel({ mapRef }: Props) {
                   onClick={unfinalize}
                   className="hud-btn-ghost !w-auto justify-center px-3 text-[10px] uppercase tracking-wider"
                 >
-                  Show options
+                  Show routes
                 </button>
               )}
               {selectedCandidateId && (
@@ -375,6 +352,29 @@ export function HikingPanel({ mapRef }: Props) {
           </div>
         </HudPanel>
       )}
+
+      {/* Settings */}
+      <HudPanel label="Settings">
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="hud-label text-[9px]">Round-trip</span>
+            <ToggleSwitch
+              on={roundTrip}
+              onChange={setRoundTrip}
+              ariaLabel="Round-trip"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={reverseWaypoints}
+            disabled={waypoints.length < 2}
+            className="hud-btn-ghost !w-auto justify-center gap-1.5 self-start px-2 text-[10px] uppercase tracking-wider"
+          >
+            <ReverseIcon /> Reverse order
+          </button>
+          <ModeAndProfilePicker profile={profile} setProfile={setProfile} />
+        </div>
+      </HudPanel>
 
       {(waypoints.length > 0 || candidates.length > 0) && (
         <button
