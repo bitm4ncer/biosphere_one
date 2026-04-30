@@ -1901,9 +1901,9 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
                   aria-hidden
                 >
                   {sheetExpanded ? (
-                    <path d="M4 9 L8 5 L12 9" />
-                  ) : (
                     <path d="M4 7 L8 11 L12 7" />
+                  ) : (
+                    <path d="M4 9 L8 5 L12 9" />
                   )}
                 </svg>
               </button>
@@ -2037,38 +2037,36 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
           onClick={() => toggleSidebar("control")}
           data-active={activeSidebar === "control"}
           aria-pressed={activeSidebar === "control"}
+          aria-label="Control Deck"
           className="hud-bottom-nav-btn"
         >
           <svg
-            width="16"
-            height="16"
+            width="22"
+            height="22"
             viewBox="0 0 16 16"
             fill="none"
             stroke="currentColor"
-            strokeWidth="1.5"
+            strokeWidth="1.4"
             strokeLinecap="round"
             aria-hidden
           >
-            <path d="M2 4H10" />
-            <circle cx="12" cy="4" r="1.6" fill="currentColor" stroke="none" />
-            <path d="M2 8H6" />
-            <circle cx="8" cy="8" r="1.6" fill="currentColor" stroke="none" />
-            <path d="M10 8H14" />
-            <path d="M2 12H10" />
-            <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+            <circle cx="8" cy="8" r="6.2" />
+            <ellipse cx="8" cy="8" rx="6.2" ry="2.6" />
+            <ellipse cx="8" cy="8" rx="2.6" ry="6.2" />
+            <line x1="1.8" y1="8" x2="14.2" y2="8" />
           </svg>
-          Control
         </button>
         <button
           type="button"
           onClick={() => toggleSidebar("hiking")}
           data-active={activeSidebar === "hiking"}
           aria-pressed={activeSidebar === "hiking"}
+          aria-label="Hiking"
           className="hud-bottom-nav-btn"
         >
           <svg
-            width="16"
-            height="16"
+            width="22"
+            height="22"
             viewBox="0 0 16 16"
             fill="none"
             stroke="currentColor"
@@ -2084,7 +2082,6 @@ export function LiveMap({ credentials, flyTarget, onOpenSettings }: Props) {
               fillOpacity="0.45"
             />
           </svg>
-          Hiking
         </button>
       </nav>
     </div>
