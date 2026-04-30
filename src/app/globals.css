@@ -633,6 +633,9 @@ input[type="range"].hud-slider::-moz-range-thumb {
   border-radius: 9999px !important;
   padding: 2px 10px !important;
   backdrop-filter: blur(8px);
+  /* Keep clear of the zoom / projection / geolocate stack on the left
+     so the expanded attribution doesn't bleed into them. */
+  max-width: calc(100vw - 88px) !important;
 }
 
 /* Force MapLibre's compact attribution to actually hide its body until
