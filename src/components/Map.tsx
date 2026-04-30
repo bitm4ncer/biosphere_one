@@ -22,8 +22,6 @@ import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
 import {
   gibsDateNDaysAgo,
-  gibsImergRecentFrames,
-  gibsImergUrl,
   gibsTileUrl,
   gibsYesterday,
 } from "@/lib/gibs";
@@ -688,18 +686,42 @@ function firesTileUrl(layer: string, date: string): string {
 // queue. Probing avoids the "first frame is empty until you drag the
 // slider" symptom — every frame in the generated array is guaranteed
 // to be a 200-returning timestamp.
+//
+// We also probe multiple (endpoint, layer, matrix) candidates because
+// GIBS publishes IMERG on different paths than the rest of its catalog
+// and the exact slug isn't well documented for client-side use.
 const IMERG_PROBE_TILE = { z: 2, x: 2, y: 1 }; // covers Africa+Europe
+
+interface ImergSource {
+  endpoint: "epsg3857" | "epsg4326";
+  layer: string;
+  matrix: string;
+}
+const IMERG_SOURCE_CANDIDATES: ImergSource[] = [
+  { endpoint: "epsg3857", layer: "IMERG_Precipitation_Rate", matrix: "GoogleMapsCompatible_Level6" },
+  { endpoint: "epsg3857", layer: "IMERG_Precipitation_Rate", matrix: "GoogleMapsCompatible_Level5" },
+  { endpoint: "epsg3857", layer: "GPM_3IMERGHH_Precipitation_Rate", matrix: "GoogleMapsCompatible_Level6" },
+  // IMERG may live only on epsg4326 — keep MapLibre in EPSG:3857 but
+  // we'll proxy through a custom source if this is what works.
+  { endpoint: "epsg4326", layer: "IMERG_Precipitation_Rate", matrix: "2km" },
+];
 
 interface ImergProbe {
   isoTime: string;
   time: number; // epoch seconds
+  source: ImergSource;
 }
 let imergProbed: { at: number; result: ImergProbe | null } | null = null;
 let imergProbeInFlight: Promise<ImergProbe | null> | null = null;
+let imergLastProbedUrl: string | null = null;
 const IMERG_PROBE_TTL_MS = 5 * 60 * 1000;
 
-function imergProbeUrl(time: string): string {
-  return gibsImergUrl({ time }).replace(
+function imergSourceTileUrl(source: ImergSource, time: string): string {
+  return `https://gibs.earthdata.nasa.gov/wmts/${source.endpoint}/best/${source.layer}/default/${time}/${source.matrix}/{z}/{y}/{x}.png`;
+}
+
+function imergProbeUrl(source: ImergSource, time: string): string {
+  return imergSourceTileUrl(source, time).replace(
     "{z}/{y}/{x}",
     `${IMERG_PROBE_TILE.z}/${IMERG_PROBE_TILE.y}/${IMERG_PROBE_TILE.x}`,
   );
@@ -722,16 +744,23 @@ async function findLatestImergFrame(): Promise<ImergProbe | null> {
   }
   if (imergProbeInFlight) return imergProbeInFlight;
   imergProbeInFlight = (async () => {
-    // Probe from 2h ago backwards in 30-min steps up to 12h. Most days
-    // a frame from t-3h to t-5h is the youngest.
-    for (let lagMin = 120; lagMin <= 720; lagMin += 30) {
-      const t = alignToHalfHour(new Date(Date.now() - lagMin * 60_000));
-      const isoTime = t.toISOString().slice(0, 19) + "Z";
-      const ok = await probeUrl(imergProbeUrl(isoTime));
-      if (ok) {
-        const result = { isoTime, time: Math.floor(t.getTime() / 1000) };
-        imergProbed = { at: Date.now(), result };
-        return result;
+    // For each source candidate, walk backwards from 2h ago to 12h ago
+    // in 30-min steps. First (source, time) pair that returns 200 wins.
+    for (const source of IMERG_SOURCE_CANDIDATES) {
+      for (let lagMin = 120; lagMin <= 720; lagMin += 30) {
+        const t = alignToHalfHour(new Date(Date.now() - lagMin * 60_000));
+        const isoTime = t.toISOString().slice(0, 19) + "Z";
+        const url = imergProbeUrl(source, isoTime);
+        imergLastProbedUrl = url;
+        if (await probeUrl(url)) {
+          const result = {
+            isoTime,
+            time: Math.floor(t.getTime() / 1000),
+            source,
+          };
+          imergProbed = { at: Date.now(), result };
+          return result;
+        }
       }
     }
     imergProbed = { at: Date.now(), result: null };
@@ -742,6 +771,10 @@ async function findLatestImergFrame(): Promise<ImergProbe | null> {
   } finally {
     imergProbeInFlight = null;
   }
+}
+
+function getLastProbedImergUrl(): string | null {
+  return imergLastProbedUrl;
 }
 
 function ensureFiresLayer(
@@ -1429,11 +1462,21 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const weatherFrames: WeatherFrame[] = useMemo(() => {
     if (!weatherOn) return [];
     if (!imergProbeResult) return [];
-    return gibsImergRecentFrames({
-      count: 13,
-      intervalMin: 30,
-      startFromIsoTime: imergProbeResult.isoTime,
-    }).map((f) => ({ time: f.time, date: f.isoTime, urls: [f.url] }));
+    const { source, isoTime: anchor } = imergProbeResult;
+    const youngest = new Date(anchor);
+    const frames: WeatherFrame[] = [];
+    const intervalMin = 30;
+    const count = 13;
+    for (let i = count - 1; i >= 0; i--) {
+      const t = new Date(youngest.getTime() - i * intervalMin * 60_000);
+      const isoTime = t.toISOString().slice(0, 19) + "Z";
+      frames.push({
+        time: Math.floor(t.getTime() / 1000),
+        date: isoTime,
+        urls: [imergSourceTileUrl(source, isoTime)],
+      });
+    }
+    return frames;
     // weatherFramesGen ticks each refresh interval to regenerate URLs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weatherOn, imergProbeResult, weatherFramesGen]);
@@ -2307,6 +2350,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           weatherSourceKind={weatherSourceKind}
           imergProbeFinished={imergProbeFinished}
           imergProbedIsoTime={imergProbeResult?.isoTime ?? null}
+          imergProbedSource={
+            imergProbeResult
+              ? `${imergProbeResult.source.endpoint}/${imergProbeResult.source.layer}/${imergProbeResult.source.matrix}`
+              : null
+          }
+          imergLastProbedUrl={getLastProbedImergUrl()}
           firesResolvedLayer={firesResolved?.layer ?? null}
           firesResolvedDate={firesResolved?.date ?? null}
           firesProbeFinished={firesProbeFinished}
@@ -3311,6 +3360,8 @@ interface DebugHudProps {
   weatherSourceKind: "satellite" | "radar";
   imergProbeFinished: boolean;
   imergProbedIsoTime: string | null;
+  imergProbedSource: string | null;
+  imergLastProbedUrl: string | null;
   firesResolvedLayer: string | null;
   firesResolvedDate: string | null;
   firesProbeFinished: boolean;
@@ -3335,6 +3386,8 @@ function DebugHud({
   weatherSourceKind,
   imergProbeFinished,
   imergProbedIsoTime,
+  imergProbedSource,
+  imergLastProbedUrl,
   firesResolvedLayer,
   firesResolvedDate,
   firesProbeFinished,
@@ -3381,11 +3434,16 @@ function DebugHud({
         clouds: frames={weatherFramesCount} ·{" "}
         {!imergProbeFinished
           ? "(probing IMERG…)"
-          : imergProbedIsoTime
-          ? `IMERG anchor=${imergProbedIsoTime}`
-          : "(no IMERG frame in last 12h)"}
+          : imergProbedIsoTime && imergProbedSource
+          ? `${imergProbedSource} · ${imergProbedIsoTime}`
+          : "(no candidate returned 200)"}
         {weatherManifestError ? ` · err=${weatherManifestError}` : ""}
       </div>
+      {imergLastProbedUrl && (
+        <div className="break-all text-amber-300">
+          last probe: <a href={imergLastProbedUrl} target="_blank" rel="noreferrer" className="underline">{imergLastProbedUrl.slice(-80)}</a>
+        </div>
+      )}
       <div>
         fires:{" "}
         {!firesProbeFinished
