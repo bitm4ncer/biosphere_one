@@ -894,12 +894,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   }, [debugOn]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   type SidebarPane = "control" | "hiking";
-  const [activeSidebar, setActiveSidebar] = useState<SidebarPane | null>(() => {
-    if (typeof window === "undefined") return "control";
-    return window.matchMedia("(min-width: 768px)").matches ? "control" : null;
+  type SheetState = "peek" | "half" | "full";
+  // Active pane is always defined: in peek state the tabs still highlight one.
+  const [activePane, setActivePane] = useState<SidebarPane>("control");
+  const [sheetState, setSheetState] = useState<SheetState>(() => {
+    if (typeof window === "undefined") return "half";
+    return window.matchMedia("(min-width: 768px)").matches ? "half" : "peek";
   });
-  const [sheetExpanded, setSheetExpanded] = useState(false);
-  const sidebarOpen = activeSidebar !== null;
+  const sidebarOpen = sheetState !== "peek";
   const [geoStatus, setGeoStatus] = useState<string | null>(null);
   const [geoHeading, setGeoHeading] = useState<string | null>(null);
   const [mapInstance, setMapInstance] = useState<MLMap | null>(null);
@@ -923,53 +925,27 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     });
   }, []));
 
-  // Match the bottom-sheet's transition duration for the slide animation
-  // when switching between panes (close-then-open) so it never snaps.
-  const SHEET_TRANSITION_MS = 300;
-  const switchTimerRef = useRef<number | null>(null);
-
-  const toggleSidebar = (pane: SidebarPane) => {
-    if (switchTimerRef.current !== null) {
-      window.clearTimeout(switchTimerRef.current);
-      switchTimerRef.current = null;
-    }
-    setSheetExpanded(false);
-    const current = activeSidebar;
-    if (current === pane) {
-      // Tap active button → slide out.
-      setActiveSidebar(null);
+  // Tab tap handling — like Apple/Google Maps. Tapping the active tab
+  // collapses the sheet to peek; tapping the other switches pane and
+  // ensures the sheet is at least half-open.
+  const selectPane = (pane: SidebarPane) => {
+    if (pane === activePane) {
+      setSheetState((s) => (s === "peek" ? "half" : "peek"));
       return;
     }
-    if (current !== null) {
-      // Switching panes: slide the current one out, then slide the new
-      // one in with its content. Two-phase animation feels native.
-      setActiveSidebar(null);
-      switchTimerRef.current = window.setTimeout(() => {
-        setActiveSidebar(pane);
-        switchTimerRef.current = null;
-      }, SHEET_TRANSITION_MS);
-      return;
-    }
-    // Currently closed → slide in.
-    setActiveSidebar(pane);
+    setActivePane(pane);
+    setSheetState((s) => (s === "peek" ? "half" : s));
   };
 
-  const closeSidebar = () => {
-    if (switchTimerRef.current !== null) {
-      window.clearTimeout(switchTimerRef.current);
-      switchTimerRef.current = null;
-    }
-    setActiveSidebar(null);
-    setSheetExpanded(false);
+  const toggleExpand = () => {
+    setSheetState((s) => (s === "full" ? "half" : "full"));
   };
 
-  useEffect(() => {
-    return () => {
-      if (switchTimerRef.current !== null) {
-        window.clearTimeout(switchTimerRef.current);
-      }
-    };
-  }, []);
+  const collapseToPeek = () => setSheetState("peek");
+
+  const cyclePeekHalf = () => {
+    setSheetState((s) => (s === "peek" ? "half" : "peek"));
+  };
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -1719,7 +1695,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
     if (!isMobile) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeSidebar();
+      if (e.key === "Escape") collapseToPeek();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1958,70 +1934,117 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
 
       {/* Sidebar — bottom-sheet on mobile, side-drawer on desktop */}
       <aside
-        data-sheet-state={
-          activeSidebar === null ? "closed" : sheetExpanded ? "full" : "half"
-        }
+        data-sheet-state={sheetState}
         className={[
-          // Mobile-only positioning lives on .hud-bottom-sheet (in
-          // globals.css) so we can translate by calc(100% + nav) when
-          // closed, which Tailwind can't express.
+          // Mobile positioning + state-driven height live on .hud-bottom-sheet
+          // (globals.css) so the map stays the dominant element. The sheet is
+          // always anchored to the viewport bottom; only its height changes.
           "hud-bottom-sheet",
-          "z-10 flex w-full",
-          // Desktop overrides — kick in at md+ where the mobile CSS
-          // media query no longer applies.
+          "flex w-full flex-col",
+          // Desktop overrides
           "md:absolute md:right-0 md:top-0 md:bottom-0",
           "md:left-auto md:max-w-[340px]",
-          "rounded-t-3xl md:rounded-none",
-          "border-t md:border-t-0 border-[color:var(--hud-border)]",
+          "md:rounded-none md:border-t-0",
           "md:transition-transform md:duration-200 md:ease-out",
-          "will-change-transform",
+          "md:will-change-transform",
           sidebarOpen
             ? "md:translate-x-0"
             : "md:translate-x-[calc(100%-34px)]",
         ].join(" ")}
       >
         {/* Side handles — desktop only */}
-        <div className="hud-side-handles flex shrink-0 flex-col items-start gap-2 pt-4">
+        <div className="hud-side-handles absolute -left-[34px] top-4 flex shrink-0 flex-col items-start gap-2">
           <SidebarToggle
-            open={activeSidebar === "control"}
-            onToggle={() => toggleSidebar("control")}
+            open={activePane === "control" && sidebarOpen}
+            onToggle={() => selectPane("control")}
           />
           <HikingToggle
-            open={activeSidebar === "hiking"}
-            onToggle={() => toggleSidebar("hiking")}
+            open={activePane === "hiking" && sidebarOpen}
+            onToggle={() => selectPane("hiking")}
           />
         </div>
 
-        {/* panel body */}
+        {/* Drag handle — mobile, taps cycle peek ↔ half */}
+        <button
+          type="button"
+          onClick={cyclePeekHalf}
+          aria-label={sheetState === "peek" ? "Open panel" : "Collapse panel"}
+          className="hud-bottom-sheet-grabber"
+        />
+
+        {/* In-sheet tabs — always visible on mobile, hidden on desktop */}
+        <nav className="hud-sheet-tabs" aria-label="Panel switcher">
+          <button
+            type="button"
+            onClick={() => selectPane("control")}
+            data-active={activePane === "control"}
+            aria-pressed={activePane === "control"}
+            aria-label="Control Deck"
+            className="hud-sheet-tab"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              aria-hidden
+            >
+              <circle cx="8" cy="8" r="6.2" />
+              <ellipse cx="8" cy="8" rx="6.2" ry="2.6" />
+              <ellipse cx="8" cy="8" rx="2.6" ry="6.2" />
+              <line x1="1.8" y1="8" x2="14.2" y2="8" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => selectPane("hiking")}
+            data-active={activePane === "hiking"}
+            aria-pressed={activePane === "hiking"}
+            aria-label="Hiking"
+            className="hud-sheet-tab"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M5 2 L5 14" />
+              <path
+                d="M5 3 L13 5 L5 7 Z"
+                fill="currentColor"
+                fillOpacity="0.45"
+              />
+            </svg>
+          </button>
+        </nav>
+
+        {/* panel body — visible only when expanded */}
         <div
           className="hud-sidebar hud-scanlines flex min-w-0 flex-1 flex-col overflow-hidden"
           aria-hidden={!sidebarOpen}
         >
-          {/* Drag-grabber — mobile only; tap toggles half ↔ full */}
-          <button
-            type="button"
-            onClick={() => setSheetExpanded((v) => !v)}
-            aria-label={sheetExpanded ? "Collapse panel" : "Expand panel"}
-            className="hud-bottom-sheet-grabber"
-          />
-
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center border-b border-[color:var(--hud-border)] px-3 py-0.5 md:py-2">
-            <span className="hud-mono hidden text-[10px] text-[color:var(--hud-text-muted)] md:inline">
-              BIOSPHERE · v1
-            </span>
-            <div className="md:hidden" />
-            <div className="flex min-w-0 items-center justify-self-center gap-2">
-              <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-[color:var(--hud-accent)] shadow-[0_0_6px_var(--hud-accent-glow)]" />
-              <span className="hud-label truncate">
-                {activeSidebar === "hiking" ? "Hiking" : "Control Deck"}
-              </span>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center border-y border-[color:var(--hud-border)] px-3 h-9 md:h-10">
+            <div className="hud-mono text-[10px] text-[color:var(--hud-text-muted)]">
+              <span className="hidden md:inline">BIOSPHERE · v1</span>
             </div>
+            <span className="hud-label justify-self-center truncate text-center">
+              {activePane === "hiking" ? "Hiking" : "Control Deck"}
+            </span>
             <div className="flex items-center justify-self-end gap-2">
               {/* Expand toggle — mobile only */}
               <button
                 type="button"
-                onClick={() => setSheetExpanded((v) => !v)}
-                aria-label={sheetExpanded ? "Collapse panel" : "Expand panel"}
+                onClick={toggleExpand}
+                aria-label={sheetState === "full" ? "Collapse panel" : "Expand panel"}
                 className="hud-icon-btn md:hidden"
               >
                 <svg
@@ -2035,18 +2058,18 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                   strokeLinejoin="round"
                   aria-hidden
                 >
-                  {sheetExpanded ? (
+                  {sheetState === "full" ? (
                     <path d="M4 7 L8 11 L12 7" />
                   ) : (
                     <path d="M4 9 L8 5 L12 9" />
                   )}
                 </svg>
               </button>
-              {/* Close — mobile only */}
+              {/* Collapse to peek — mobile only */}
               <button
                 type="button"
-                onClick={closeSidebar}
-                aria-label="Close panel"
+                onClick={collapseToPeek}
+                aria-label="Collapse panel"
                 className="hud-icon-btn md:hidden"
               >
                 <svg
@@ -2067,7 +2090,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           </div>
 
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 py-3">
-            {activeSidebar === "hiking" ? (
+            {activePane === "hiking" ? (
               <HikingPanel mapRef={mapRef} />
             ) : (
               <>
@@ -2160,61 +2183,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           </div>
         </div>
       </aside>
-
-      {/* Bottom nav — mobile only; switches between Control Deck / Hiking */}
-      <nav className="hud-bottom-nav" aria-label="Panel switcher">
-        <button
-          type="button"
-          onClick={() => toggleSidebar("control")}
-          data-active={activeSidebar === "control"}
-          aria-pressed={activeSidebar === "control"}
-          aria-label="Control Deck"
-          className="hud-bottom-nav-btn"
-        >
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            aria-hidden
-          >
-            <circle cx="8" cy="8" r="6.2" />
-            <ellipse cx="8" cy="8" rx="6.2" ry="2.6" />
-            <ellipse cx="8" cy="8" rx="2.6" ry="6.2" />
-            <line x1="1.8" y1="8" x2="14.2" y2="8" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => toggleSidebar("hiking")}
-          data-active={activeSidebar === "hiking"}
-          aria-pressed={activeSidebar === "hiking"}
-          aria-label="Hiking"
-          className="hud-bottom-nav-btn"
-        >
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 16 16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden
-          >
-            <path d="M5 2 L5 14" />
-            <path
-              d="M5 3 L13 5 L5 7 Z"
-              fill="currentColor"
-              fillOpacity="0.45"
-            />
-          </svg>
-        </button>
-      </nav>
 
       {debugOn && (
         <DebugHud

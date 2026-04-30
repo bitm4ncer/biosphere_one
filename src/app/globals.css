@@ -208,10 +208,10 @@ body {
 
 /* ── Mobile bottom nav (floating panel-switcher pills) ─────────────── */
 :root {
-  /* Vertical room the floating bottom-nav reserves on mobile, used by the
-     bottom-sheet to sit above it. 16 px gap from screen + 56 px button +
-     8 px breathing room + iOS home-indicator safe-area. */
-  --hud-nav-h: calc(80px + env(safe-area-inset-bottom, 0px));
+  /* Always-visible portion of the bottom sheet (peek state) — drag
+     handle + tab row + iOS home-indicator safe area. Map controls /
+     overlays anchor against this so they always clear the sheet. */
+  --hud-nav-h: calc(82px + env(safe-area-inset-bottom, 0px));
   /* Vertical room the floating top-bar reserves: notch safe-area + 36 px
      icon/search height + 12 px padding + 8 px gap below. */
   --hud-topbar-h: calc(56px + env(safe-area-inset-top, 0px));
@@ -277,39 +277,89 @@ body {
 
 /* ── Mobile bottom sheet ─────────────────────────────────────────────── */
 /* ── Mobile bottom sheet ─────────────────────────────────────────────── */
-/* Mobile bottom-sheet positioning — driven by data-sheet-state on the
-   <aside>. Anchored at the floating bottom-nav (bottom: --hud-nav-h)
-   and at the floating top-bar (top: --hud-topbar-h) for the full state.
-   Closed state translates by full height + nav offset so the sheet
-   leaves the viewport entirely instead of peeking above the nav. */
+/* Mobile bottom-sheet — anchored at viewport bottom (no gap), drives
+   its three snap states off data-sheet-state. Peek shows just the
+   handle + tab row so the map stays the dominant element; half opens
+   to 50 dvh; full extends up to just below the floating top-bar.   The whole sheet is one rounded surface; tabs live inside it instead
+   of floating separately. */
 @media (max-width: 767px) {
   .hud-bottom-sheet {
     position: fixed !important;
     left: 0 !important;
     right: 0 !important;
-    bottom: var(--hud-nav-h) !important;
+    bottom: 0 !important;
     top: auto !important;
-    height: 50dvh !important;
-    transform: translateY(0);
-    transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1),
-      top 300ms cubic-bezier(0.22, 1, 0.36, 1),
-      height 300ms cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: transform, top, height;
+    z-index: 11;
+    background: var(--hud-surface-solid);
+    border-top: 1px solid var(--hud-border);
+    border-radius: 24px 24px 0 0;
+    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(10px);
+    transition: height 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: height;
+    /* Total height of always-visible peek: grabber + tab row + safe-area. */
+    --hud-peek-h: calc(82px + env(safe-area-inset-bottom, 0px));
   }
 
-  .hud-bottom-sheet[data-sheet-state="closed"] {
-    transform: translateY(calc(100% + var(--hud-nav-h)));
-    pointer-events: none;
+  .hud-bottom-sheet[data-sheet-state="peek"] {
+    height: var(--hud-peek-h);
   }
 
   .hud-bottom-sheet[data-sheet-state="half"] {
-    height: 50dvh !important;
+    height: 50dvh;
   }
 
   .hud-bottom-sheet[data-sheet-state="full"] {
-    top: var(--hud-topbar-h) !important;
-    height: auto !important;
+    height: calc(100dvh - var(--hud-topbar-h));
   }
+
+  /* Hide the panel body in peek state on mobile so only the drag-handle
+     and the tab row are visible — keeps the map dominant. Desktop is
+     unaffected because the .hud-sidebar always renders inside the
+     side-drawer aside. */
+  .hud-bottom-sheet[data-sheet-state="peek"] .hud-sidebar {
+    display: none;
+  }
+}
+
+/* ── In-sheet tab row (replaces the old floating bottom-nav) ────────── */
+.hud-sheet-tabs {
+  display: none;
+  gap: 8px;
+  padding: 0 14px 6px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 767px) {
+  .hud-sheet-tabs { display: flex; }
+}
+
+.hud-sheet-tab {
+  flex: 1;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--hud-text-muted);
+  background: transparent;
+  border: 1px solid var(--hud-border);
+  border-radius: 9999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease,
+    transform 120ms ease;
+}
+
+.hud-sheet-tab:active {
+  transform: scale(0.97);
+}
+
+.hud-sheet-tab[data-active="true"] {
+  color: var(--hud-accent);
+  background: var(--hud-accent-soft);
+  border-color: var(--hud-border-strong);
+  box-shadow: inset 0 0 0 1px var(--hud-border-strong);
 }
 
 .hud-bottom-sheet-grabber {
