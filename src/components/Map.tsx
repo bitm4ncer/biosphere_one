@@ -1905,9 +1905,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
         </div>
       )}
 
-      {/* geolocate status banner (diagnostic — bottom center, above scale) */}
+      {/* geolocate status banner — top-centre on mobile (clear of the
+          attribution / scale / zoom controls at the bottom), bottom-
+          centre on desktop where the side-drawer leaves the bottom
+          edge free. */}
       {(geoStatus || geoHeading) && (
-        <div className="pointer-events-auto absolute bottom-[calc(var(--hud-nav-h)+12px)] md:bottom-3 left-1/2 z-10 -translate-x-1/2">
+        <div className="pointer-events-auto absolute left-1/2 z-20 -translate-x-1/2 top-[calc(env(safe-area-inset-top,0px)+62px)] md:top-auto md:bottom-3">
           <div className="hud-panel flex items-center gap-2 px-3 py-1.5 text-[11px] text-[color:var(--hud-text)]">
             <span className="hud-corner-tr" aria-hidden />
             <span className="hud-corner-br" aria-hidden />
