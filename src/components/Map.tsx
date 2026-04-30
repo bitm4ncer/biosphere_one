@@ -176,7 +176,11 @@ function removeHybridOverlay(map: MLMap) {
   if (map.getSource(HYBRID_TRANSPORT_SOURCE_ID)) map.removeSource(HYBRID_TRANSPORT_SOURCE_ID);
 }
 
-const WEATHER_MAXZOOM = 9;
+// RainViewer recommends z=1-7 for radar tiles. Beyond z=7 they return a
+// "Zoom Level Not Supported" placeholder image instead of real data.
+// Capping source maxzoom at 7 makes MapLibre overzoom (stretch) the
+// z=7 tiles for higher zoom views, which works well with smooth=1.
+const WEATHER_MAXZOOM = 7;
 
 function ensureWeatherLayer(
   map: MLMap,
@@ -619,22 +623,67 @@ const NDVI_ATTRIBUTION =
 // every fire on the planet, including Europe / Africa / Asia.
 const FIRES_MAX_ZOOM = 9;
 
-// VIIRS Thermal Anomalies have a 24-48 h GIBS processing latency.
-// "Yesterday" routinely 400s for several hours each morning UTC. We
-// default to 2 days back for safety; if even that 400s the user can
-// step further back by setting `firesDateOffset` (planned escalation).
-const FIRES_DATE_OFFSET_DAYS = 2;
+// VIIRS Thermal Anomalies have variable GIBS processing latency — often
+// 1 day, sometimes 3-5 if a satellite pass missed processing. We probe
+// from 1 day back to 7 days back, picking the most recent date that
+// returns 200, and cache the answer for the page lifetime.
+const FIRES_LAYER = "VIIRS_NOAA20_Thermal_Anomalies_375m_All";
+const FIRES_PROBE_TILE = { z: 2, x: 2, y: 1 }; // covers Africa+Europe
 
-function firesTileUrl(): string {
-  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_NOAA20_Thermal_Anomalies_375m_All/default/${gibsDateNDaysAgo(FIRES_DATE_OFFSET_DAYS)}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`;
+let firesProbedDate: string | null = null;
+let firesProbeInFlight: Promise<string | null> | null = null;
+
+function firesProbeUrl(date: string): string {
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${FIRES_LAYER}/default/${date}/GoogleMapsCompatible_Level9/${FIRES_PROBE_TILE.z}/${FIRES_PROBE_TILE.y}/${FIRES_PROBE_TILE.x}.png`;
 }
 
-function ensureFiresLayer(map: MLMap, opacity: number) {
+function probeImage(url: string, timeoutMs = 8000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    let done = false;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      resolve(ok);
+    };
+    img.onload = () => finish(true);
+    img.onerror = () => finish(false);
+    setTimeout(() => finish(false), timeoutMs);
+    img.src = url;
+  });
+}
+
+async function findLatestFiresDate(): Promise<string | null> {
+  if (firesProbedDate) return firesProbedDate;
+  if (firesProbeInFlight) return firesProbeInFlight;
+  firesProbeInFlight = (async () => {
+    for (let daysBack = 1; daysBack <= 7; daysBack++) {
+      const date = gibsDateNDaysAgo(daysBack);
+      const ok = await probeImage(firesProbeUrl(date));
+      if (ok) {
+        firesProbedDate = date;
+        return date;
+      }
+    }
+    return null;
+  })();
+  try {
+    return await firesProbeInFlight;
+  } finally {
+    firesProbeInFlight = null;
+  }
+}
+
+function firesTileUrl(date: string): string {
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${FIRES_LAYER}/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`;
+}
+
+function ensureFiresLayer(map: MLMap, opacity: number, date: string) {
   if (map.getLayer(FIRES_LAYER_ID)) return;
   if (map.getSource(FIRES_SOURCE_ID)) map.removeSource(FIRES_SOURCE_ID);
   map.addSource(FIRES_SOURCE_ID, {
     type: "raster",
-    tiles: [firesTileUrl()],
+    tiles: [firesTileUrl(date)],
     tileSize: 256,
     maxzoom: FIRES_MAX_ZOOM,
     attribution: FIRES_ATTRIBUTION,
@@ -823,6 +872,10 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const [timelineState, setTimelineState] = useState<TimelineState>({ kind: "idle" });
   const [weatherFrameIndex, setWeatherFrameIndex] = useState(0);
   const [weatherPlaying, setWeatherPlaying] = useState(false);
+  // Latest GIBS date for Thermal Anomalies (resolved via image probe).
+  // null = probe not yet run, "" = probe found nothing in the 7-day
+  // window, otherwise YYYY-MM-DD.
+  const [firesResolvedDate, setFiresResolvedDate] = useState<string | null>(null);
   // Debug HUD activation. Triggered by ANY of:
   //   - URL contains `debug=1` (or just `debug` — the test for any
   //     truthy value also handles `?debug=1>` typos and `#debug=1`).
@@ -1675,10 +1728,28 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     }
   }, [firesOn]);
 
+  // Probe for the latest available Thermal Anomalies date the first
+  // time Fires is enabled. Cached at module level so subsequent toggles
+  // skip the probe.
+  useEffect(() => {
+    if (!firesOn) return;
+    if (firesResolvedDate !== null) return;
+    let cancelled = false;
+    findLatestFiresDate().then((date) => {
+      if (cancelled) return;
+      setFiresResolvedDate(date ?? "");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [firesOn, firesResolvedDate]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !firesOn) return;
-    const apply = () => ensureFiresLayer(map, firesOpacity);
+    if (!firesResolvedDate) return; // wait for probe
+    const date = firesResolvedDate;
+    const apply = () => ensureFiresLayer(map, firesOpacity, date);
     if (map.isStyleLoaded()) {
       apply();
     } else {
@@ -1689,7 +1760,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       map.off("style.load", apply);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firesOn, active]);
+  }, [firesOn, active, firesResolvedDate]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2252,6 +2323,8 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           weatherFramesCount={weatherFrames.length}
           weatherManifestError={weatherManifestError}
           weatherManifestLoaded={weatherManifest !== null}
+          weatherSourceKind={weatherSourceKind}
+          firesResolvedDate={firesResolvedDate}
           lastBasemapKey={lastAppliedBasemapKeyRef.current}
           basemapMode={basemapMode}
           imageBasemapId={imageBasemapId}
@@ -3252,6 +3325,8 @@ interface DebugHudProps {
   weatherFramesCount: number;
   weatherManifestError: string | null;
   weatherManifestLoaded: boolean;
+  weatherSourceKind: "satellite" | "radar";
+  firesResolvedDate: string | null;
   lastBasemapKey: string | null;
   basemapMode: BasemapMode;
   imageBasemapId: string;
@@ -3270,6 +3345,8 @@ function DebugHud({
   weatherFramesCount,
   weatherManifestError,
   weatherManifestLoaded,
+  weatherSourceKind,
+  firesResolvedDate,
   lastBasemapKey,
   basemapMode,
   imageBasemapId,
@@ -3310,7 +3387,10 @@ function DebugHud({
         layer present: fires-layer={String(firesLayerOnMap)} · weather-layer={String(weatherLayerOnMap)}
       </div>
       <div>
-        manifest: loaded={String(weatherManifestLoaded)} · frames={weatherFramesCount} · err={weatherManifestError ?? "none"}
+        manifest: loaded={String(weatherManifestLoaded)} · src={weatherSourceKind} · frames={weatherFramesCount} · err={weatherManifestError ?? "none"}
+      </div>
+      <div>
+        fires probed date: {firesResolvedDate === null ? "(probing…)" : firesResolvedDate || "(none in last 7 days)"}
       </div>
       <div>last basemap key: {lastBasemapKey ?? "(none)"}</div>
       <div className="mt-1">layers ({layerIds.length}): {layerIds.join(", ") || "(none)"}</div>
