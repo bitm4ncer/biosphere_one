@@ -88,7 +88,7 @@ export function SearchBox({ onSelect }: Props) {
 
   return (
     <div ref={boxRef} className="pointer-events-auto relative w-full text-xs">
-      <div className="hud-search flex items-center gap-2 px-4 py-2">
+      <div className="hud-search flex h-9 items-center gap-2 px-4">
         <svg
           viewBox="0 0 16 16"
           className="h-3.5 w-3.5 shrink-0 text-[color:var(--hud-text-muted)]"

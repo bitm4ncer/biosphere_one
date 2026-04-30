@@ -489,7 +489,7 @@ body {
   }
   .maplibregl-ctrl-bottom-left,
   .maplibregl-ctrl-bottom-right {
-    margin-bottom: var(--hud-nav-h) !important;
+    margin-bottom: calc(var(--hud-nav-h) + 8px) !important;
   }
 }
 
@@ -633,6 +633,20 @@ input[type="range"].hud-slider::-moz-range-thumb {
   border-radius: 9999px !important;
   padding: 2px 10px !important;
   backdrop-filter: blur(8px);
+}
+
+/* Force MapLibre's compact attribution to actually hide its body until
+   the user taps the (i) button. Default behaviour leaks the long Esri
+   string in spite of attributionControl: { compact: true }. */
+.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show)
+  .maplibregl-ctrl-attrib-inner {
+  display: none !important;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact:not(.maplibregl-compact-show) {
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  backdrop-filter: none !important;
 }
 
 .maplibregl-ctrl-attrib a { color: var(--hud-text-label) !important; }
