@@ -2195,7 +2195,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               <button
                 type="button"
                 onClick={toggleExpand}
-                aria-label={sheetState === "full" ? "Collapse panel" : "Expand panel"}
+                aria-label={sheetState === "full" ? "Shrink panel" : "Expand panel"}
                 className="hud-icon-btn md:hidden"
               >
                 <svg
@@ -2204,19 +2204,32 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                   viewBox="0 0 16 16"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="1.6"
+                  strokeWidth="1.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   aria-hidden
                 >
                   {sheetState === "full" ? (
-                    <path d="M4 7 L8 11 L12 7" />
+                    /* Inward corner brackets — collapse / shrink */
+                    <>
+                      <path d="M6 2 L6 6 L2 6" />
+                      <path d="M10 2 L10 6 L14 6" />
+                      <path d="M6 14 L6 10 L2 10" />
+                      <path d="M10 14 L10 10 L14 10" />
+                    </>
                   ) : (
-                    <path d="M4 9 L8 5 L12 9" />
+                    /* Outward corner brackets — expand to full screen */
+                    <>
+                      <path d="M2 6 L2 2 L6 2" />
+                      <path d="M14 6 L14 2 L10 2" />
+                      <path d="M2 10 L2 14 L6 14" />
+                      <path d="M14 10 L14 14 L10 14" />
+                    </>
                   )}
                 </svg>
               </button>
-              {/* Collapse to peek — mobile only */}
+              {/* Collapse to peek — mobile only; chevron-down to mirror the
+                  drag-handle action since it minimises rather than dismisses. */}
               <button
                 type="button"
                 onClick={collapseToPeek}
@@ -2229,12 +2242,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                   viewBox="0 0 16 16"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="1.6"
+                  strokeWidth="1.7"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   aria-hidden
                 >
-                  <path d="M4 4 L12 12 M12 4 L4 12" />
+                  <path d="M8 3 L8 12 M4 8 L8 12 L12 8" />
                 </svg>
               </button>
             </div>
