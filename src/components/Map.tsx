@@ -2276,7 +2276,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 pt-3 pb-3">
+          <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 pt-3 pb-[max(env(safe-area-inset-bottom,0px),12px)]">
             {activePane === "hiking" ? (
               <HikingPanel mapRef={mapRef} />
             ) : (

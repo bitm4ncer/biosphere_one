@@ -297,11 +297,10 @@ body {
     backdrop-filter: blur(10px);
     transition: height 320ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: height;
-    /* Reserve the iPhone home-indicator safe-area inside the sheet so
-       the sheet's surface colour fills all the way to the screen edge
-       (no bare black strip), while pushing the inner layout up so its
-       last row is still readable above the indicator. */
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* No padding-bottom — sheet content extends to the literal viewport
+       edge (Google-Maps-style). Inner scroll containers respect the
+       home-indicator safe-area on their own, so nothing important sits
+       under the indicator. */
     /* Total height of always-visible peek: grabber + tab row + safe-area. */
     --hud-peek-h: calc(82px + env(safe-area-inset-bottom, 0px));
   }
