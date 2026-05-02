@@ -2165,12 +2165,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           edge free. */}
       {(geoStatus || geoHeading) && (
         <div className="pointer-events-auto absolute left-1/2 z-20 -translate-x-1/2 top-[calc(env(safe-area-inset-top,0px)+62px)] md:top-auto md:bottom-3">
-          <div className="hud-panel flex items-center gap-2 px-3 py-1.5 text-[11px] text-[color:var(--hud-text)]">
+          <div className="hud-panel flex items-center gap-2 px-3 py-1.5 text-[11px] text-[color:var(--hud-text)] whitespace-nowrap">
             <span className="hud-corner-tr" aria-hidden />
             <span className="hud-corner-br" aria-hidden />
-            {geoStatus && <span className="hud-mono">{geoStatus}</span>}
+            {geoStatus && <span className="hud-mono whitespace-nowrap">{geoStatus}</span>}
             {geoHeading && (
-              <span className="hud-mono text-[color:var(--hud-accent)]">
+              <span className="hud-mono whitespace-nowrap text-[color:var(--hud-accent)]">
                 · {geoHeading}
               </span>
             )}
