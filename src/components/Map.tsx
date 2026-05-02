@@ -940,6 +940,10 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const scalerRef = useRef<HTMLDivElement | null>(null);
   const coneRef = useRef<HTMLDivElement | null>(null);
   const compassUnsubRef = useRef<(() => void) | null>(null);
+  // True while the user is actively dragging / pinching / rotating /
+  // tilting the map. Used to suspend auto-rotation in the bearing
+  // effect so it doesn't fight finger-driven panning.
+  const interactingRef = useRef(false);
   const [livePos, setLivePos] = useState<[number, number] | null>(null);
   const [liveHeadingDeg, setLiveHeadingDeg] = useState<number | null>(null);
   const {
@@ -1502,6 +1506,35 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     return s.candidates.find((c) => c.id === id)?.coordinates ?? null;
   });
 
+  // Track user-initiated camera interactions so the auto-rotation in the
+  // bearing effect can step out of the way. Without this, every compass /
+  // GPS tick fires a map.easeTo that interrupts an in-progress finger
+  // drag → the map ratchets and feels stuck.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const onStart = () => {
+      interactingRef.current = true;
+    };
+    const onEnd = () => {
+      interactingRef.current = false;
+    };
+    map.on("dragstart", onStart);
+    map.on("dragend", onEnd);
+    map.on("rotatestart", onStart);
+    map.on("rotateend", onEnd);
+    map.on("pitchstart", onStart);
+    map.on("pitchend", onEnd);
+    return () => {
+      map.off("dragstart", onStart);
+      map.off("dragend", onEnd);
+      map.off("rotatestart", onStart);
+      map.off("rotateend", onEnd);
+      map.off("pitchstart", onStart);
+      map.off("pitchend", onEnd);
+    };
+  }, [mapInstance]);
+
   // Single bearing-effect: every dependency change recomputes a target
   // bearing for the current orientation mode and applies it via easeTo.
   // No other call site sets bearing, so animations never queue against
@@ -1509,6 +1542,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    if (interactingRef.current) return; // user is dragging — leave the camera alone
 
     if (orientationMode === "north") {
       try {
@@ -1528,8 +1562,19 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       target = bearingAlongRoute(activeRouteCoords, livePos);
     }
     if (target == null) return;
+
+    // Threshold: skip ease for sub-degree compass noise. With ~4 Hz
+    // compass updates this also keeps animations from overlapping —
+    // each ease (~180 ms) will mostly finish before the next tick.
+    const current = ((map.getBearing() % 360) + 360) % 360;
+    const t = ((target % 360) + 360) % 360;
+    let delta = t - current;
+    if (delta > 180) delta -= 360;
+    if (delta < -180) delta += 360;
+    if (Math.abs(delta) < 2) return;
+
     try {
-      map.easeTo({ bearing: target, duration: 250, easing: (t) => t });
+      map.easeTo({ bearing: target, duration: 180, easing: (s) => s });
     } catch {
       /* style not yet loaded */
     }
