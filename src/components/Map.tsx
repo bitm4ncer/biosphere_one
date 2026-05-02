@@ -72,6 +72,10 @@ const FOREST_LOSS_SOURCE_ID = "biosphere-forest-loss";
 const FOREST_LOSS_LAYER_ID = "biosphere-forest-loss-layer";
 const NO2_SOURCE_ID = "biosphere-no2";
 const NO2_LAYER_ID = "biosphere-no2-layer";
+const NATURA_SOURCE_ID = "biosphere-natura";
+const NATURA_LAYER_ID = "biosphere-natura-layer";
+const LAND_COVER_SOURCE_ID = "biosphere-land-cover";
+const LAND_COVER_LAYER_ID = "biosphere-land-cover-layer";
 // Hybrid overlay: Esri reference layers (transparent roads, boundaries, labels)
 // — same setup Esri uses for its own "Imagery Hybrid" view.
 const HYBRID_TRANSPORT_SOURCE_ID = "hybrid-transport";
@@ -844,17 +848,36 @@ const NO2_MAX_ZOOM = 5;
 
 // GBIF Maps API — global density tiles, no key. The point style
 // scales nicely between z=0 and z=12; @1x is the standard Retina-1
-// variant (a separate @2x exists if we ever want sharper).
-function speciesTileUrl(): string {
-  return "https://api.gbif.org/v2/map/occurrence/density/{z}/{x}/{y}@1x.png?style=classic.point&srs=EPSG%3A3857";
+// variant (a separate @2x exists if we ever want sharper). When
+// `taxonKey` is set the API filters server-side to that branch of
+// the taxonomic tree (e.g. 212 Aves, 359 Mammalia).
+export const SPECIES_TAXON_OPTIONS: { key: string | null; label: string }[] = [
+  { key: null, label: "All" },
+  { key: "212", label: "Birds" },
+  { key: "359", label: "Mammals" },
+  { key: "131", label: "Amphibians" },
+  { key: "358", label: "Reptiles" },
+  { key: "216", label: "Insects" },
+  { key: "6", label: "Plants" },
+];
+
+function speciesTileUrl(taxonKey: string | null): string {
+  const base =
+    "https://api.gbif.org/v2/map/occurrence/density/{z}/{x}/{y}@1x.png?style=classic.point&srs=EPSG%3A3857";
+  return taxonKey ? `${base}&taxonKey=${taxonKey}` : base;
 }
 
-function ensureSpeciesLayer(map: MLMap, opacity: number, beforeId?: string) {
+function ensureSpeciesLayer(
+  map: MLMap,
+  opacity: number,
+  taxonKey: string | null,
+  beforeId?: string,
+) {
   if (map.getLayer(SPECIES_LAYER_ID)) return;
   if (map.getSource(SPECIES_SOURCE_ID)) map.removeSource(SPECIES_SOURCE_ID);
   map.addSource(SPECIES_SOURCE_ID, {
     type: "raster",
-    tiles: [speciesTileUrl()],
+    tiles: [speciesTileUrl(taxonKey)],
     tileSize: 512,
     maxzoom: SPECIES_MAX_ZOOM,
     attribution: SPECIES_ATTRIBUTION,
@@ -1091,6 +1114,196 @@ function removeNo2Layer(map: MLMap) {
   if (map.getSource(NO2_SOURCE_ID)) map.removeSource(NO2_SOURCE_ID);
 }
 
+// Natura 2000 — EEA's protected-areas WMS. MapLibre's `{bbox-epsg-3857}`
+// placeholder lets a raster source consume a WMS GetMap endpoint
+// without us needing to compute bbox per tile manually.
+const NATURA_ATTRIBUTION =
+  '<a href="https://natura2000.eea.europa.eu" target="_blank" rel="noreferrer">EEA</a> · Natura 2000 (FFH + SPA)';
+
+const NATURA_WMS_URL =
+  "https://bio.discomap.eea.europa.eu/arcgis/services/ProtectedSites/Natura2000Sites/MapServer/WMSServer";
+
+const NATURA_PROBE_TILE = { z: 6, x: 33, y: 21 }; // Mid-Europe
+
+interface NaturaSource {
+  layers: string;
+  label: string;
+}
+const NATURA_SOURCE_CANDIDATES: NaturaSource[] = [
+  // ArcGIS WMS sublayers exposed by EEA: 0 SCI/SAC (FFH), 1 SPA, often
+  // also a combined "1,0" view. Order matters — the first that returns
+  // 200 wins.
+  { layers: "1,0", label: "FFH + Vogelschutz (SCI + SPA)" },
+  { layers: "0", label: "FFH-Gebiete (SCI / SAC)" },
+  { layers: "1", label: "Vogelschutzgebiete (SPA)" },
+];
+let naturaProbed: NaturaSource | null = null;
+let naturaProbeInFlight: Promise<NaturaSource | null> | null = null;
+let naturaLastProbedUrl: string | null = null;
+
+function naturaTileUrl(layers: string): string {
+  const params = new URLSearchParams({
+    SERVICE: "WMS",
+    REQUEST: "GetMap",
+    VERSION: "1.1.1",
+    LAYERS: layers,
+    STYLES: "",
+    FORMAT: "image/png",
+    TRANSPARENT: "true",
+    SRS: "EPSG:3857",
+    WIDTH: "256",
+    HEIGHT: "256",
+  });
+  return `${NATURA_WMS_URL}?${params.toString()}&BBOX={bbox-epsg-3857}`;
+}
+
+/** Build a static-bbox probe URL covering the mid-Europe tile so we can
+ * verify the WMS responds before MapLibre tries to use it. */
+function naturaProbeUrl(layers: string): string {
+  // EPSG:3857 bbox for tile 6/33/21 (rough mid-Europe).
+  const z = NATURA_PROBE_TILE.z;
+  const tileSize = (2 * Math.PI * 6378137) / Math.pow(2, z);
+  const left = -Math.PI * 6378137 + NATURA_PROBE_TILE.x * tileSize;
+  const top = Math.PI * 6378137 - NATURA_PROBE_TILE.y * tileSize;
+  const right = left + tileSize;
+  const bottom = top - tileSize;
+  const params = new URLSearchParams({
+    SERVICE: "WMS",
+    REQUEST: "GetMap",
+    VERSION: "1.1.1",
+    LAYERS: layers,
+    STYLES: "",
+    FORMAT: "image/png",
+    TRANSPARENT: "true",
+    SRS: "EPSG:3857",
+    WIDTH: "256",
+    HEIGHT: "256",
+    BBOX: `${left},${bottom},${right},${top}`,
+  });
+  return `${NATURA_WMS_URL}?${params.toString()}`;
+}
+
+async function findLatestNaturaSource(): Promise<NaturaSource | null> {
+  if (naturaProbed) return naturaProbed;
+  if (naturaProbeInFlight) return naturaProbeInFlight;
+  naturaProbeInFlight = (async () => {
+    for (const candidate of NATURA_SOURCE_CANDIDATES) {
+      const url = naturaProbeUrl(candidate.layers);
+      naturaLastProbedUrl = url;
+      if (await probeUrl(url)) {
+        naturaProbed = candidate;
+        return candidate;
+      }
+    }
+    return null;
+  })();
+  try {
+    return await naturaProbeInFlight;
+  } finally {
+    naturaProbeInFlight = null;
+  }
+}
+
+function getLastProbedNaturaUrl(): string | null {
+  return naturaLastProbedUrl;
+}
+
+function ensureNaturaLayer(
+  map: MLMap,
+  opacity: number,
+  source: NaturaSource,
+  beforeId?: string,
+) {
+  if (map.getLayer(NATURA_LAYER_ID)) return;
+  if (map.getSource(NATURA_SOURCE_ID)) map.removeSource(NATURA_SOURCE_ID);
+  map.addSource(NATURA_SOURCE_ID, {
+    type: "raster",
+    tiles: [naturaTileUrl(source.layers)],
+    tileSize: 256,
+    attribution: NATURA_ATTRIBUTION,
+  });
+  map.addLayer(
+    {
+      id: NATURA_LAYER_ID,
+      type: "raster",
+      source: NATURA_SOURCE_ID,
+      paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
+    },
+    beforeId,
+  );
+}
+
+function updateNaturaOpacity(map: MLMap, opacity: number) {
+  if (map.getLayer(NATURA_LAYER_ID)) {
+    map.setPaintProperty(NATURA_LAYER_ID, "raster-opacity", opacity);
+  }
+}
+
+function removeNaturaLayer(map: MLMap) {
+  if (map.getLayer(NATURA_LAYER_ID)) map.removeLayer(NATURA_LAYER_ID);
+  if (map.getSource(NATURA_SOURCE_ID)) map.removeSource(NATURA_SOURCE_ID);
+}
+
+// ESA WorldCover 2021 — global 10 m land-cover map (11 classes
+// including cropland, tree cover, grassland, urban, water). Served by
+// VITO TerraScope as an open WMS, no auth.
+const LAND_COVER_ATTRIBUTION =
+  '<a href="https://esa-worldcover.org" target="_blank" rel="noreferrer">ESA WorldCover 2021</a> · 10 m global land cover';
+
+const LAND_COVER_WMS_URL = "https://services.terrascope.be/wms/v2";
+const LAND_COVER_LAYER_NAME = "WORLDCOVER_2021_MAP";
+
+function landCoverTileUrl(): string {
+  const params = new URLSearchParams({
+    SERVICE: "WMS",
+    REQUEST: "GetMap",
+    VERSION: "1.1.1",
+    LAYERS: LAND_COVER_LAYER_NAME,
+    STYLES: "",
+    FORMAT: "image/png",
+    TRANSPARENT: "true",
+    SRS: "EPSG:3857",
+    WIDTH: "512",
+    HEIGHT: "512",
+  });
+  return `${LAND_COVER_WMS_URL}?${params.toString()}&BBOX={bbox-epsg-3857}`;
+}
+
+function ensureLandCoverLayer(
+  map: MLMap,
+  opacity: number,
+  beforeId?: string,
+) {
+  if (map.getLayer(LAND_COVER_LAYER_ID)) return;
+  if (map.getSource(LAND_COVER_SOURCE_ID)) map.removeSource(LAND_COVER_SOURCE_ID);
+  map.addSource(LAND_COVER_SOURCE_ID, {
+    type: "raster",
+    tiles: [landCoverTileUrl()],
+    tileSize: 512,
+    attribution: LAND_COVER_ATTRIBUTION,
+  });
+  map.addLayer(
+    {
+      id: LAND_COVER_LAYER_ID,
+      type: "raster",
+      source: LAND_COVER_SOURCE_ID,
+      paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
+    },
+    beforeId,
+  );
+}
+
+function updateLandCoverOpacity(map: MLMap, opacity: number) {
+  if (map.getLayer(LAND_COVER_LAYER_ID)) {
+    map.setPaintProperty(LAND_COVER_LAYER_ID, "raster-opacity", opacity);
+  }
+}
+
+function removeLandCoverLayer(map: MLMap) {
+  if (map.getLayer(LAND_COVER_LAYER_ID)) map.removeLayer(LAND_COVER_LAYER_ID);
+  if (map.getSource(LAND_COVER_SOURCE_ID)) map.removeSource(LAND_COVER_SOURCE_ID);
+}
+
 /** First existing layer id from the list, used as `beforeId` for stacking. */
 function firstExistingLayerId(map: MLMap, ids: string[]): string | undefined {
   for (const id of ids) {
@@ -1243,10 +1456,15 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     ndviOpacity,
     speciesOn,
     speciesOpacity,
+    speciesTaxonKey,
     forestLossOn,
     forestLossOpacity,
     no2On,
     no2Opacity,
+    naturaSitesOn,
+    naturaSitesOpacity,
+    landCoverOn,
+    landCoverOpacity,
     setImageBasemapId,
     setVectorBasemapId,
     setBasemapMode,
@@ -1261,10 +1479,15 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     setNdviOpacity,
     setSpeciesOn,
     setSpeciesOpacity,
+    setSpeciesTaxonKey,
     setForestLossOn,
     setForestLossOpacity,
     setNo2On,
     setNo2Opacity,
+    setNaturaSitesOn,
+    setNaturaSitesOpacity,
+    setLandCoverOn,
+    setLandCoverOpacity,
   } = useSettings();
   const active =
     basemapMode === "vector" ? vectorBasemapId : imageBasemapId;
@@ -1291,11 +1514,17 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const [firesResolved, setFiresResolved] = useState<FiresProbe | null>(null);
   const [firesProbeFinished, setFiresProbeFinished] = useState(false);
 
-  // Biosphere panel — Forest Loss probe + NO₂ probe.
+  // Biosphere panel — Forest Loss probe + NO₂ probe + Natura probe.
   const [forestLossResolved, setForestLossResolved] = useState<ForestLossSource | null>(null);
   const [forestLossProbeFinished, setForestLossProbeFinished] = useState(false);
   const [no2Resolved, setNo2Resolved] = useState<No2Source | null>(null);
   const [no2ProbeFinished, setNo2ProbeFinished] = useState(false);
+  const [naturaResolved, setNaturaResolved] = useState<NaturaSource | null>(null);
+  const [naturaProbeFinished, setNaturaProbeFinished] = useState(false);
+  // Track the taxonKey actually applied to the Species source so a
+  // change forces a remove+recreate (raster source tile templates are
+  // baked at creation time).
+  const appliedSpeciesTaxonRef = useRef<string | null>(null);
   // Debug HUD activation. Triggered by ANY of:
   //   - URL contains `debug=1` (or just `debug` — the test for any
   //     truthy value also handles `?debug=1>` typos and `#debug=1`).
@@ -2342,6 +2571,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     if (!speciesOn) {
       const map = mapRef.current;
       if (map) removeSpeciesLayer(map);
+      appliedSpeciesTaxonRef.current = null;
     }
   }, [speciesOn]);
 
@@ -2349,12 +2579,18 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     const map = mapRef.current;
     if (!map || !speciesOn) return;
     const apply = () => {
+      // taxonKey is baked into the GBIF tile URL at source creation;
+      // a change forces a remove+recreate.
+      if (appliedSpeciesTaxonRef.current !== speciesTaxonKey) {
+        removeSpeciesLayer(map);
+        appliedSpeciesTaxonRef.current = speciesTaxonKey;
+      }
       // Stack below Fires so fire dots remain readable, above NO₂.
       const beforeId = firstExistingLayerId(map, [
         FIRES_LAYER_ID,
         OVERLAY_LAYER_ID,
       ]);
-      ensureSpeciesLayer(map, speciesOpacity, beforeId);
+      ensureSpeciesLayer(map, speciesOpacity, speciesTaxonKey, beforeId);
     };
     if (map.isStyleLoaded()) apply();
     map.on("style.load", apply);
@@ -2362,7 +2598,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       map.off("style.load", apply);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [speciesOn, active]);
+  }, [speciesOn, active, speciesTaxonKey]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -2471,6 +2707,96 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     if (!map || !no2On) return;
     updateNo2Opacity(map, no2Opacity);
   }, [no2On, no2Opacity]);
+
+  // ── Biosphere · Natura 2000 (EEA WMS) ─────────────────────────────
+  useEffect(() => {
+    if (!naturaSitesOn) {
+      const map = mapRef.current;
+      if (map) removeNaturaLayer(map);
+    }
+  }, [naturaSitesOn]);
+
+  useEffect(() => {
+    if (!naturaSitesOn) return;
+    if (naturaProbeFinished) return;
+    let cancelled = false;
+    findLatestNaturaSource().then((found) => {
+      if (cancelled) return;
+      setNaturaResolved(found);
+      setNaturaProbeFinished(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [naturaSitesOn, naturaProbeFinished]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !naturaSitesOn) return;
+    if (!naturaResolved) return;
+    const source = naturaResolved;
+    const apply = () => {
+      // Stack on top of Land Cover but below Forest Loss / Species
+      // so polygons of protected areas read clearly.
+      const beforeId = firstExistingLayerId(map, [
+        FOREST_LOSS_LAYER_ID,
+        SPECIES_LAYER_ID,
+        FIRES_LAYER_ID,
+        OVERLAY_LAYER_ID,
+      ]);
+      ensureNaturaLayer(map, naturaSitesOpacity, source, beforeId);
+    };
+    if (map.isStyleLoaded()) apply();
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [naturaSitesOn, active, naturaResolved]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !naturaSitesOn) return;
+    updateNaturaOpacity(map, naturaSitesOpacity);
+  }, [naturaSitesOn, naturaSitesOpacity]);
+
+  // ── Biosphere · Land Cover (ESA WorldCover via TerraScope WMS) ─────
+  useEffect(() => {
+    if (!landCoverOn) {
+      const map = mapRef.current;
+      if (map) removeLandCoverLayer(map);
+    }
+  }, [landCoverOn]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !landCoverOn) return;
+    const apply = () => {
+      // Bottom of the biosphere stack — provides context for everything
+      // above (forest loss makes more sense over land-cover classes).
+      const beforeId = firstExistingLayerId(map, [
+        NATURA_LAYER_ID,
+        NO2_LAYER_ID,
+        FOREST_LOSS_LAYER_ID,
+        SPECIES_LAYER_ID,
+        FIRES_LAYER_ID,
+        OVERLAY_LAYER_ID,
+      ]);
+      ensureLandCoverLayer(map, landCoverOpacity, beforeId);
+    };
+    if (map.isStyleLoaded()) apply();
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landCoverOn, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !landCoverOn) return;
+    updateLandCoverOpacity(map, landCoverOpacity);
+  }, [landCoverOn, landCoverOpacity]);
 
   useEffect(() => {
     if (!ndviOn) {
@@ -2993,8 +3319,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               <BiospherePanel
                 speciesOn={speciesOn}
                 speciesOpacity={speciesOpacity}
+                speciesTaxonKey={speciesTaxonKey}
+                speciesTaxonOptions={SPECIES_TAXON_OPTIONS}
                 onSpeciesOnChange={setSpeciesOn}
                 onSpeciesOpacityChange={setSpeciesOpacity}
+                onSpeciesTaxonKeyChange={setSpeciesTaxonKey}
                 forestLossOn={forestLossOn}
                 forestLossOpacity={forestLossOpacity}
                 forestLossProbeFinished={forestLossProbeFinished}
@@ -3008,6 +3337,16 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                 no2ResolvedDate={no2Resolved?.date ?? null}
                 onNo2OnChange={setNo2On}
                 onNo2OpacityChange={setNo2Opacity}
+                naturaSitesOn={naturaSitesOn}
+                naturaSitesOpacity={naturaSitesOpacity}
+                naturaProbeFinished={naturaProbeFinished}
+                naturaResolvedLabel={naturaResolved?.label ?? null}
+                onNaturaSitesOnChange={setNaturaSitesOn}
+                onNaturaSitesOpacityChange={setNaturaSitesOpacity}
+                landCoverOn={landCoverOn}
+                landCoverOpacity={landCoverOpacity}
+                onLandCoverOnChange={setLandCoverOn}
+                onLandCoverOpacityChange={setLandCoverOpacity}
               />
             ) : (
               <>

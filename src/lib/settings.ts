@@ -44,10 +44,19 @@ export interface Settings {
   /** Biosphere panel — independent overlay toggles, can stack. */
   speciesOn: boolean;
   speciesOpacity: number;
+  /** GBIF taxonKey filter, null = all taxa. Common keys: 212 birds,
+   * 359 mammals, 6 plants, 216 insects, 358 reptiles, 131 amphibians. */
+  speciesTaxonKey: string | null;
   forestLossOn: boolean;
   forestLossOpacity: number;
   no2On: boolean;
   no2Opacity: number;
+  /** Natura 2000 (FFH + SPA) protected areas, EEA WMS. */
+  naturaSitesOn: boolean;
+  naturaSitesOpacity: number;
+  /** ESA WorldCover 10m global land cover. */
+  landCoverOn: boolean;
+  landCoverOpacity: number;
   setImageBasemapId: (id: string) => void;
   setVectorBasemapId: (id: string) => void;
   setBasemapMode: (mode: BasemapMode) => void;
@@ -63,10 +72,15 @@ export interface Settings {
   setNdviOpacity: (o: number) => void;
   setSpeciesOn: (on: boolean) => void;
   setSpeciesOpacity: (o: number) => void;
+  setSpeciesTaxonKey: (key: string | null) => void;
   setForestLossOn: (on: boolean) => void;
   setForestLossOpacity: (o: number) => void;
   setNo2On: (on: boolean) => void;
   setNo2Opacity: (o: number) => void;
+  setNaturaSitesOn: (on: boolean) => void;
+  setNaturaSitesOpacity: (o: number) => void;
+  setLandCoverOn: (on: boolean) => void;
+  setLandCoverOpacity: (o: number) => void;
 }
 
 export const useSettings = create<Settings>()(
@@ -87,10 +101,15 @@ export const useSettings = create<Settings>()(
       ndviOpacity: 0.7,
       speciesOn: false,
       speciesOpacity: 0.85,
+      speciesTaxonKey: null,
       forestLossOn: false,
       forestLossOpacity: 0.85,
       no2On: false,
       no2Opacity: 0.55,
+      naturaSitesOn: false,
+      naturaSitesOpacity: 0.6,
+      landCoverOn: false,
+      landCoverOpacity: 0.55,
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
       setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
       setBasemapMode: (mode) => set({ basemapMode: mode }),
@@ -110,14 +129,19 @@ export const useSettings = create<Settings>()(
       setNdviOpacity: (o) => set({ ndviOpacity: o }),
       setSpeciesOn: (on) => set({ speciesOn: on }),
       setSpeciesOpacity: (o) => set({ speciesOpacity: clamp01(o) }),
+      setSpeciesTaxonKey: (key) => set({ speciesTaxonKey: key }),
       setForestLossOn: (on) => set({ forestLossOn: on }),
       setForestLossOpacity: (o) => set({ forestLossOpacity: clamp01(o) }),
       setNo2On: (on) => set({ no2On: on }),
       setNo2Opacity: (o) => set({ no2Opacity: clamp01(o) }),
+      setNaturaSitesOn: (on) => set({ naturaSitesOn: on }),
+      setNaturaSitesOpacity: (o) => set({ naturaSitesOpacity: clamp01(o) }),
+      setLandCoverOn: (on) => set({ landCoverOn: on }),
+      setLandCoverOpacity: (o) => set({ landCoverOpacity: clamp01(o) }),
     }),
     {
       name: "biosphere1:settings",
-      version: 13,
+      version: 14,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -135,14 +159,33 @@ export const useSettings = create<Settings>()(
         ndviOpacity: state.ndviOpacity,
         speciesOn: state.speciesOn,
         speciesOpacity: state.speciesOpacity,
+        speciesTaxonKey: state.speciesTaxonKey,
         forestLossOn: state.forestLossOn,
         forestLossOpacity: state.forestLossOpacity,
         no2On: state.no2On,
         no2Opacity: state.no2Opacity,
+        naturaSitesOn: state.naturaSitesOn,
+        naturaSitesOpacity: state.naturaSitesOpacity,
+        landCoverOn: state.landCoverOn,
+        landCoverOpacity: state.landCoverOpacity,
       }),
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v13 → v14: extend Biosphere panel with taxon filter for
+        // species + Natura 2000 + ESA WorldCover layer toggles.
+        if (version < 14) {
+          if (
+            p.speciesTaxonKey !== null &&
+            typeof p.speciesTaxonKey !== "string"
+          ) {
+            p.speciesTaxonKey = null;
+          }
+          if (typeof p.naturaSitesOn !== "boolean") p.naturaSitesOn = false;
+          if (typeof p.naturaSitesOpacity !== "number") p.naturaSitesOpacity = 0.6;
+          if (typeof p.landCoverOn !== "boolean") p.landCoverOn = false;
+          if (typeof p.landCoverOpacity !== "number") p.landCoverOpacity = 0.55;
+        }
         // v12 → v13: introduce Biosphere panel layers. Independent of
         // activeOverlay; backfill defaults for users who didn't have
         // these fields persisted yet.
