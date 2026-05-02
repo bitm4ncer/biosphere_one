@@ -13,6 +13,7 @@ export type Projection = "mercator" | "globe";
 export type OverlayKind = "clouds" | "rail" | "fires" | "ndvi";
 export type RailStyle = "tiles" | "lines";
 export type BasemapMode = "photo" | "hybrid" | "vector";
+export type OrientationMode = "north" | "route" | "heading";
 
 export interface Settings {
   imageBasemapId: string;
@@ -26,6 +27,12 @@ export interface Settings {
    */
   liveBasemapDayOffset: number;
   projection: Projection;
+  /**
+   * Map rotation reference. north = bearing pinned to 0; route = align
+   * to the active hike's segment under the user's GPS; heading =
+   * align to the device compass heading.
+   */
+  orientationMode: OrientationMode;
   activeOverlay: OverlayKind | null;
   weatherOpacity: number;
   railwayOpacity: number;
@@ -38,6 +45,7 @@ export interface Settings {
   setBasemapVariant: (basemapId: string, variantId: string) => void;
   setLiveBasemapDayOffset: (offset: number) => void;
   setProjection: (p: Projection) => void;
+  setOrientationMode: (m: OrientationMode) => void;
   setActiveOverlay: (kind: OverlayKind | null) => void;
   setWeatherOpacity: (o: number) => void;
   setRailwayOpacity: (o: number) => void;
@@ -55,6 +63,7 @@ export const useSettings = create<Settings>()(
       basemapVariants: {},
       liveBasemapDayOffset: 0,
       projection: "mercator",
+      orientationMode: "north",
       activeOverlay: null,
       weatherOpacity: 0.8,
       railwayOpacity: 0.85,
@@ -71,6 +80,7 @@ export const useSettings = create<Settings>()(
       setLiveBasemapDayOffset: (offset) =>
         set({ liveBasemapDayOffset: Math.max(0, Math.min(14, Math.round(offset))) }),
       setProjection: (p) => set({ projection: p }),
+      setOrientationMode: (m) => set({ orientationMode: m }),
       setActiveOverlay: (kind) => set({ activeOverlay: kind }),
       setWeatherOpacity: (o) => set({ weatherOpacity: o }),
       setRailwayOpacity: (o) => set({ railwayOpacity: o }),
@@ -80,7 +90,7 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 11,
+      version: 12,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -89,6 +99,7 @@ export const useSettings = create<Settings>()(
         basemapVariants: state.basemapVariants,
         liveBasemapDayOffset: state.liveBasemapDayOffset,
         projection: state.projection,
+        orientationMode: state.orientationMode,
         activeOverlay: state.activeOverlay,
         weatherOpacity: state.weatherOpacity,
         railwayOpacity: state.railwayOpacity,
@@ -99,6 +110,17 @@ export const useSettings = create<Settings>()(
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v11 → v12: introduce orientationMode. Default to existing
+        // behaviour (north-up).
+        if (version < 12) {
+          if (
+            p.orientationMode !== "north" &&
+            p.orientationMode !== "route" &&
+            p.orientationMode !== "heading"
+          ) {
+            p.orientationMode = "north";
+          }
+        }
         // v9 → v10: revert the temporary "tiles" default. Lines is the
         // primary mode again; users who liked tiles can switch manually.
         if (version < 10 && p.railStyle === "tiles") {

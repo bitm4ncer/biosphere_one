@@ -660,6 +660,27 @@ input[type="range"].hud-slider::-moz-range-thumb {
   justify-content: center;
 }
 
+/* 3-state orientation toggle (north / route / heading). Active mode
+   tinted with the HUD accent so the user can read at a glance which
+   alignment the map currently follows. data-armed=false dims the icon
+   when the active mode has no data yet (e.g. route mode before a hike
+   is selected, or heading mode before the compass produces a tick). */
+.maplibregl-ctrl-orientation {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  color: var(--hud-text) !important;
+}
+
+.maplibregl-ctrl-orientation.orientation-route,
+.maplibregl-ctrl-orientation.orientation-heading {
+  color: var(--hud-accent) !important;
+}
+
+.maplibregl-ctrl-orientation[data-armed="false"] {
+  opacity: 0.45;
+}
+
 .maplibregl-ctrl-scale {
   background: var(--hud-surface) !important;
   border: 1px solid var(--hud-border) !important;

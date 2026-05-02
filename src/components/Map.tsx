@@ -12,7 +12,12 @@ import {
   resolveBasemapUrl,
   type Basemap,
 } from "@/lib/basemaps";
-import { useSettings, type BasemapMode, type OverlayKind } from "@/lib/settings";
+import {
+  useSettings,
+  type BasemapMode,
+  type OrientationMode,
+  type OverlayKind,
+} from "@/lib/settings";
 import { getAccessToken } from "@/lib/sentinel/auth";
 import { fetchDayOverlay } from "@/lib/sentinel/latest-overlay";
 import { searchCatalog, type Snapshot } from "@/lib/sentinel/catalog";
@@ -36,6 +41,8 @@ import { useHiking } from "@/lib/hiking/store";
 import { useLongPress } from "./hiking/useLongPress";
 import { requestCompassPermission, subscribeCompass } from "@/lib/compass";
 import { ProjectionControl } from "./ProjectionControl";
+import { OrientationControl } from "./OrientationControl";
+import { bearingAlongRoute } from "@/lib/orientation";
 import { HudPanel } from "./hud/HudPanel";
 import { SidebarToggle } from "./SidebarToggle";
 import { HikingToggle } from "./HikingToggle";
@@ -927,11 +934,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const mapRef = useRef<MLMap | null>(null);
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
   const projectionControlRef = useRef<ProjectionControl | null>(null);
+  const orientationControlRef = useRef<OrientationControl | null>(null);
   const liveMarkerRef = useRef<maplibregl.Marker | null>(null);
   const searchMarkerRef = useRef<maplibregl.Marker | null>(null);
   const scalerRef = useRef<HTMLDivElement | null>(null);
   const coneRef = useRef<HTMLDivElement | null>(null);
   const compassUnsubRef = useRef<(() => void) | null>(null);
+  const [livePos, setLivePos] = useState<[number, number] | null>(null);
+  const [liveHeadingDeg, setLiveHeadingDeg] = useState<number | null>(null);
   const {
     imageBasemapId,
     vectorBasemapId,
@@ -939,6 +949,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     basemapVariants,
     liveBasemapDayOffset,
     projection,
+    orientationMode,
     activeOverlay,
     weatherOpacity,
     railwayOpacity,
@@ -1118,7 +1129,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
 
     map.addControl(new ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
     map.addControl(
-      new maplibregl.NavigationControl({ showCompass: true, visualizePitch: false }),
+      new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
       "bottom-left",
     );
     const geolocate = new maplibregl.GeolocateControl({
@@ -1194,6 +1205,15 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     });
     projectionControlRef.current = projectionControl;
     map.addControl(projectionControl, "bottom-left");
+
+    // Custom orientation toggle replaces the old NavigationControl compass
+    // (showCompass disabled above). Cycles north → route → heading.
+    const orientationControl = new OrientationControl({
+      initial: useSettings.getState().orientationMode,
+      onChange: (m: OrientationMode) => useSettings.getState().setOrientationMode(m),
+    });
+    orientationControlRef.current = orientationControl;
+    map.addControl(orientationControl, "bottom-left");
 
     map.on("moveend", () => {
       const c = map.getCenter();
@@ -1369,6 +1389,10 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
         const rounded = Math.round(heading);
         if (rounded === lastRounded) return;
         lastRounded = rounded;
+        // Mirror the rounded heading into React state so the bearing
+        // effect can react. Rounding to whole degrees naturally
+        // throttles re-renders to ~once per visible direction change.
+        setLiveHeadingDeg(rounded);
         const accStr =
           accuracy === -1
             ? " (uncal)"
@@ -1382,6 +1406,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
 
     const onGeolocate = (e: { coords: GeolocationCoordinates }) => {
       ensureMarker(e.coords.longitude, e.coords.latitude);
+      setLivePos([e.coords.longitude, e.coords.latitude]);
       setGeoStatus(`Located · ±${Math.round(e.coords.accuracy)}m`);
       if (!compassStarted) void startCompassSubscription();
     };
@@ -1418,6 +1443,8 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       compassStarted = false;
       setGeoStatus(null);
       setGeoHeading(null);
+      setLivePos(null);
+      setLiveHeadingDeg(null);
     };
 
     geo.on("geolocate", onGeolocate);
@@ -1460,6 +1487,78 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       map.off("style.load", apply);
     };
   }, [projection]);
+
+  // Keep the orientation control in sync if the persisted store changes
+  // (e.g., after rehydration on first paint).
+  useEffect(() => {
+    orientationControlRef.current?.setMode(orientationMode);
+  }, [orientationMode]);
+
+  // Pull the currently-selected hiking route coordinates so the route-up
+  // bearing effect can find the segment under the user's GPS position.
+  const activeRouteCoords = useHiking((s) => {
+    const id = s.selectedCandidateId;
+    if (!id) return null;
+    return s.candidates.find((c) => c.id === id)?.coordinates ?? null;
+  });
+
+  // Single bearing-effect: every dependency change recomputes a target
+  // bearing for the current orientation mode and applies it via easeTo.
+  // No other call site sets bearing, so animations never queue against
+  // each other.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (orientationMode === "north") {
+      try {
+        map.easeTo({ bearing: 0, duration: 400 });
+      } catch {
+        /* style not yet loaded */
+      }
+      return;
+    }
+
+    let target: number | null = null;
+    if (orientationMode === "heading") {
+      if (liveHeadingDeg == null) return;
+      target = liveHeadingDeg;
+    } else if (orientationMode === "route") {
+      if (!activeRouteCoords || activeRouteCoords.length < 2 || !livePos) return;
+      target = bearingAlongRoute(activeRouteCoords, livePos);
+    }
+    if (target == null) return;
+    try {
+      map.easeTo({ bearing: target, duration: 250, easing: (t) => t });
+    } catch {
+      /* style not yet loaded */
+    }
+  }, [
+    orientationMode,
+    livePos?.[0],
+    livePos?.[1],
+    liveHeadingDeg,
+    activeRouteCoords,
+  ]);
+
+  // Visual hint on the orientation button: dim the icon when the
+  // current mode has no data to act on yet.
+  useEffect(() => {
+    const ctrl = orientationControlRef.current;
+    if (!ctrl) return;
+    if (orientationMode === "north") {
+      ctrl.setArmed(true);
+      return;
+    }
+    if (orientationMode === "route") {
+      ctrl.setArmed(
+        !!activeRouteCoords && activeRouteCoords.length >= 2 && !!livePos,
+      );
+      return;
+    }
+    // heading
+    ctrl.setArmed(liveHeadingDeg != null);
+  }, [orientationMode, activeRouteCoords, livePos, liveHeadingDeg]);
 
   useEffect(() => {
     const map = mapRef.current;
