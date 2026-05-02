@@ -543,13 +543,17 @@ body {
   .maplibregl-ctrl-top-right {
     margin-top: env(safe-area-inset-top, 0px);
   }
-  .maplibregl-ctrl-bottom-left {
-    margin-bottom: calc(var(--hud-nav-h) + 8px) !important;
-  }
-  /* Stack the attribution above the scale so the scale stays readable
-     on its own row instead of being clipped by the expanded (i) text. */
+  .maplibregl-ctrl-bottom-left,
   .maplibregl-ctrl-bottom-right {
-    margin-bottom: calc(var(--hud-nav-h) + 8px + 32px) !important;
+    margin-bottom: calc(var(--hud-nav-h) + 8px) !important;
+    transition: margin-bottom 180ms ease;
+  }
+  /* Lift the attribution up by one row only while the user has it
+     explicitly expanded — that's the one state where the long Esri
+     text would horizontally overlap the scale on the left. Default
+     (collapsed) leaves both controls flush on the same baseline. */
+  .maplibregl-ctrl-bottom-right:has(.maplibregl-compact-show) {
+    margin-bottom: calc(var(--hud-nav-h) + 48px) !important;
   }
 }
 
