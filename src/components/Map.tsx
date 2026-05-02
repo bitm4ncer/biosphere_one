@@ -1134,6 +1134,59 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     });
     map.addControl(geolocate, "bottom-left");
     geolocateRef.current = geolocate;
+
+    // Remember when the user has previously granted location access so
+    // subsequent app launches can auto-trigger the geolocate control
+    // without a manual tap. The browser/OS still owns the permission;
+    // we just skip the manual tap when we're confident it was already
+    // granted before. If the OS has revoked it, the standard prompt
+    // re-appears as expected.
+    const GEO_FLAG = "biosphere.geo.autoTrack";
+    geolocate.on("geolocate", () => {
+      try {
+        window.localStorage.setItem(GEO_FLAG, "1");
+      } catch {
+        /* private mode or storage disabled — non-fatal */
+      }
+    });
+    geolocate.on("error", () => {
+      // If the user (or OS) has revoked, drop the auto-trigger flag so
+      // we don't keep firing a denied request on every reload.
+      try {
+        window.localStorage.removeItem(GEO_FLAG);
+      } catch {
+        /* ignore */
+      }
+    });
+
+    let autoStarted = false;
+    const tryAutoStart = async () => {
+      if (autoStarted) return;
+      let stored = "0";
+      try {
+        stored = window.localStorage.getItem(GEO_FLAG) ?? "0";
+      } catch {
+        /* ignore */
+      }
+      if (stored !== "1") return;
+      // Best-effort permission probe; fail-open if Permissions API is
+      // missing (older iOS) so we still attempt the silent trigger.
+      try {
+        const perm = await navigator.permissions?.query?.({
+          name: "geolocation" as PermissionName,
+        });
+        if (perm?.state === "denied") return;
+      } catch {
+        /* ignore */
+      }
+      autoStarted = true;
+      // GeolocateControl needs the map fully loaded before trigger() can
+      // hand off to watchPosition; wait one tick after style load.
+      const fire = () => geolocate.trigger();
+      if (map.loaded()) fire();
+      else map.once("load", fire);
+    };
+    tryAutoStart();
     map.addControl(new maplibregl.FullscreenControl(), "bottom-left");
     const projectionControl = new ProjectionControl({
       initial: projection,
