@@ -15,6 +15,43 @@ body {
   background: #0a0a0a;
 }
 
+/* Search-result drop pin (rendered when the user picks a place from
+   the top-bar search). Soft glow underneath, tap to dismiss. */
+.search-result-marker {
+  position: relative;
+  cursor: pointer;
+  pointer-events: auto;
+  transform-origin: 50% 100%;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.4));
+  animation: search-marker-drop 280ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.search-result-marker:hover {
+  transform: scale(1.06);
+}
+
+.search-result-marker::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  width: 18px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--hud-accent);
+  filter: blur(5px);
+  opacity: 0.55;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes search-marker-drop {
+  0%   { transform: translateY(-12px) scale(0.92); opacity: 0; }
+  60%  { transform: translateY(2px)   scale(1.04); opacity: 1; }
+  100% { transform: translateY(0)     scale(1);    opacity: 1; }
+}
+
 /* Live location marker */
 .live-location-marker {
   position: relative;

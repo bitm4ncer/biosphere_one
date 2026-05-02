@@ -928,6 +928,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const geolocateRef = useRef<maplibregl.GeolocateControl | null>(null);
   const projectionControlRef = useRef<ProjectionControl | null>(null);
   const liveMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const searchMarkerRef = useRef<maplibregl.Marker | null>(null);
   const scalerRef = useRef<HTMLDivElement | null>(null);
   const coneRef = useRef<HTMLDivElement | null>(null);
   const compassUnsubRef = useRef<(() => void) | null>(null);
@@ -1973,9 +1974,42 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   }
 
   useEffect(() => {
-    if (!flyTarget) return;
     const map = mapRef.current;
     if (!map) return;
+
+    // Drop / replace a teardrop marker at the search target so the user
+    // can see *where* on the map their pick is. Tapping the pin removes
+    // it; the next search replaces it.
+    if (!flyTarget) {
+      if (searchMarkerRef.current) {
+        searchMarkerRef.current.remove();
+        searchMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const el = document.createElement("div");
+    el.className = "search-result-marker";
+    el.title = flyTarget.label;
+    el.innerHTML = `
+      <svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M14 0 C 5 0 0 5 0 13 C 0 24 14 36 14 36 C 14 36 28 24 28 13 C 28 5 23 0 14 0 Z" fill="#d4ff38" stroke="rgba(8,10,6,0.85)" stroke-width="1.5" />
+        <circle cx="14" cy="13" r="5" fill="#080a06" />
+      </svg>
+    `;
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setFlyTarget(null);
+    });
+
+    searchMarkerRef.current?.remove();
+    searchMarkerRef.current = new maplibregl.Marker({
+      element: el,
+      anchor: "bottom",
+    })
+      .setLngLat(flyTarget.coordinates)
+      .addTo(map);
+
     if (flyTarget.extent) {
       const [west, north, east, south] = flyTarget.extent;
       map.fitBounds(
