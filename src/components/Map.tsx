@@ -979,12 +979,35 @@ interface No2Source {
   label: string;
 }
 const NO2_LAYER_CANDIDATES = [
-  { layer: "OMI_NO2_Tropospheric_Column", matrix: "GoogleMapsCompatible_Level5", label: "NASA OMI" },
+  // OMI / Aura — long-running NO₂ product, daily, global. Various
+  // historical slug forms documented in the GIBS catalog.
   { layer: "OMI_NO2_Tropospheric_Column", matrix: "GoogleMapsCompatible_Level6", label: "NASA OMI" },
+  { layer: "OMI_NO2_Tropospheric_Column", matrix: "GoogleMapsCompatible_Level5", label: "NASA OMI" },
+  { layer: "OMI_Aura_NO2_Tropospheric_Column", matrix: "GoogleMapsCompatible_Level6", label: "NASA OMI" },
+  { layer: "OMI_Aura_Nitrogen_Dioxide_Tropospheric_Column", matrix: "GoogleMapsCompatible_Level6", label: "NASA OMI" },
+  // Sentinel-5P / TROPOMI — newer high-res product (~3.5 km).
+  {
+    layer: "Sentinel-5P_NO2_Tropospheric_Column_Daily",
+    matrix: "GoogleMapsCompatible_Level7",
+    label: "Sentinel-5P TROPOMI",
+  },
   {
     layer: "Sentinel-5P_TROPOMI_NO2_Tropospheric_Column_Daily",
-    matrix: "GoogleMapsCompatible_Level5",
+    matrix: "GoogleMapsCompatible_Level7",
     label: "Sentinel-5P TROPOMI",
+  },
+  {
+    layer: "S5P_TROPOMI_NO2_Tropospheric_Column_Daily",
+    matrix: "GoogleMapsCompatible_Level7",
+    label: "Sentinel-5P TROPOMI",
+  },
+  // Final fallback — MODIS Aerosol Optical Depth. Not strictly NO₂ but
+  // a closely related "polluted air" indicator that's universally
+  // available daily.
+  {
+    layer: "MODIS_Combined_Value_Added_AOD",
+    matrix: "GoogleMapsCompatible_Level6",
+    label: "MODIS aerosol (fallback)",
   },
 ] as const;
 

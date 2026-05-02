@@ -28,12 +28,22 @@ interface BiospherePanelProps {
   onNo2OpacityChange: (o: number) => void;
 }
 
+// Standardised colour ramps used by the underlying tile services.
+// Kept inline as Tailwind-friendly CSS gradients so a separate stylesheet
+// is not required.
+const SPECIES_GRADIENT =
+  "linear-gradient(to right, #fde047, #fb923c, #ef4444, #7f1d1d)";
+const FOREST_LOSS_GRADIENT =
+  "linear-gradient(to right, #fbcfe8, #ec4899, #be123c)";
+const NO2_GRADIENT =
+  "linear-gradient(to right, #1e3a8a, #06b6d4, #fde047, #fb923c, #b91c1c)";
+
 /**
  * Sidebar pane that surfaces three independent nature/biosphere
  * overlays. Each layer is its own card with on/off toggle, caption,
- * and (when on) opacity slider + status footer. Independent of the
- * `activeOverlay` system in the OverlayPanel — the user can stack
- * any combination of these on top of clouds/fires/rail/ndvi.
+ * legend, and (when on) opacity slider + status footer. Independent
+ * of the `activeOverlay` system in the OverlayPanel — the user can
+ * stack any combination of these on top of clouds/fires/rail/ndvi.
  */
 export function BiospherePanel(props: BiospherePanelProps) {
   return (
@@ -46,6 +56,13 @@ export function BiospherePanel(props: BiospherePanelProps) {
         onOpacityChange={props.onSpeciesOpacityChange}
         caption="Live biodiversity observations · GBIF · 2 B+ records · global"
         status={props.speciesOn ? "density tiles · classic-point style" : null}
+        legend={{
+          gradient: SPECIES_GRADIENT,
+          minLabel: "few",
+          midLabel: "many",
+          maxLabel: "very many",
+          unit: "observations / tile",
+        }}
       />
 
       <BiosphereLayerCard
@@ -64,6 +81,12 @@ export function BiospherePanel(props: BiospherePanelProps) {
                 ? props.forestLossResolvedLabel
                 : "no source available"
         }
+        legend={{
+          gradient: FOREST_LOSS_GRADIENT,
+          minLabel: "older",
+          maxLabel: "recent",
+          unit: "tree-cover loss",
+        }}
       />
 
       <BiosphereLayerCard
@@ -82,9 +105,24 @@ export function BiospherePanel(props: BiospherePanelProps) {
                 ? `${props.no2ResolvedLabel}${props.no2ResolvedDate ? ` · ${props.no2ResolvedDate}` : ""}`
                 : "no source available"
         }
+        legend={{
+          gradient: NO2_GRADIENT,
+          minLabel: "low",
+          midLabel: "moderate",
+          maxLabel: "high",
+          unit: "molecules/cm² · 10¹⁵",
+        }}
       />
     </div>
   );
+}
+
+interface LegendSpec {
+  gradient: string;
+  minLabel: string;
+  midLabel?: string;
+  maxLabel: string;
+  unit?: string;
 }
 
 interface BiosphereLayerCardProps {
@@ -93,6 +131,7 @@ interface BiosphereLayerCardProps {
   on: boolean;
   opacity: number;
   status: ReactNode | null;
+  legend?: LegendSpec;
   onToggle: (on: boolean) => void;
   onOpacityChange: (o: number) => void;
 }
@@ -103,6 +142,7 @@ function BiosphereLayerCard({
   on,
   opacity,
   status,
+  legend,
   onToggle,
   onOpacityChange,
 }: BiosphereLayerCardProps) {
@@ -159,6 +199,8 @@ function BiosphereLayerCard({
           {caption}
         </p>
 
+        {legend && on && <LegendBar spec={legend} />}
+
         {status && (
           <p className="hud-mono text-[9px] uppercase tracking-wider text-[color:var(--hud-text-muted)]">
             {status}
@@ -166,5 +208,27 @@ function BiosphereLayerCard({
         )}
       </div>
     </HudPanel>
+  );
+}
+
+function LegendBar({ spec }: { spec: LegendSpec }) {
+  return (
+    <div className="flex flex-col gap-0.5" aria-label="Legend">
+      <div
+        className="h-1.5 w-full rounded-full"
+        style={{ background: spec.gradient }}
+        aria-hidden
+      />
+      <div className="flex justify-between text-[9px] text-[color:var(--hud-text-muted)]">
+        <span>{spec.minLabel}</span>
+        {spec.midLabel && <span>{spec.midLabel}</span>}
+        <span>{spec.maxLabel}</span>
+      </div>
+      {spec.unit && (
+        <span className="hud-mono text-[9px] text-[color:var(--hud-text-muted)]">
+          {spec.unit}
+        </span>
+      )}
+    </div>
   );
 }
