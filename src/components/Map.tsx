@@ -1426,6 +1426,22 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     map.addControl(geolocate, "bottom-left");
     geolocateRef.current = geolocate;
 
+    // iOS DeviceOrientationEvent.requestPermission() must be called inside a
+    // real user-gesture handler. The existing path through onGeolocate is too
+    // late — by then navigator.geolocation has consumed the gesture and iOS
+    // silently denies the prompt. Hook the geolocate button's click directly
+    // so the compass-permission dialog opens right after the location one.
+    // Non-iOS browsers (no requestPermission API) return true synchronously,
+    // so this is a no-op there. Safe to call repeatedly: iOS caches the
+    // first response.
+    const askCompassOnGeolocateTap = () => {
+      void requestCompassPermission();
+    };
+    const geoBtnEl = map
+      .getContainer()
+      .querySelector<HTMLElement>(".maplibregl-ctrl-geolocate");
+    geoBtnEl?.addEventListener("click", askCompassOnGeolocateTap);
+
     // Remember when the user has previously granted location access so
     // subsequent app launches can auto-trigger the geolocate control
     // without a manual tap. The browser/OS still owns the permission;
@@ -1564,6 +1580,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       window.removeEventListener("unhandledrejection", onUnhandled);
       map.off("error", onMapError);
       resizeObserver.disconnect();
+      geoBtnEl?.removeEventListener("click", askCompassOnGeolocateTap);
       map.remove();
       mapRef.current = null;
       setMapInstance(null);
