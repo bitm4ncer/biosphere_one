@@ -675,6 +675,8 @@ function SearchAdd({
     left: number;
     top: number;
     width: number;
+    placeAbove: boolean;
+    maxHeight: number;
   } | null>(null);
   const ctrlRef = useRef<AbortController | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -711,20 +713,42 @@ function SearchAdd({
   }, [q]);
 
   // Track input position so the portal-rendered dropdown stays anchored.
+  // Uses visualViewport so the placement stays correct when the iOS
+  // keyboard shrinks the visible area; flips above the input when there
+  // isn't enough room below, and caps maxHeight to the available space.
   useEffect(() => {
     if (!open) return;
     const update = () => {
       const el = inputRef.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setAnchor({ left: r.left, top: r.bottom + 4, width: r.width });
+      const vv = window.visualViewport;
+      const vTop = vv?.offsetTop ?? 0;
+      const vH = vv?.height ?? window.innerHeight;
+      const visBottom = vTop + vH;
+      const spaceBelow = Math.max(0, visBottom - r.bottom - 8);
+      const spaceAbove = Math.max(0, r.top - vTop - 8);
+      const idealH = 256;
+      const placeAbove = spaceBelow < 160 && spaceAbove > spaceBelow;
+      const maxHeight = Math.min(idealH, placeAbove ? spaceAbove : spaceBelow);
+      setAnchor({
+        left: r.left,
+        top: placeAbove ? r.top - 4 : r.bottom + 4,
+        width: r.width,
+        placeAbove,
+        maxHeight,
+      });
     };
     update();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
     };
   }, [open]);
 
@@ -768,11 +792,13 @@ function SearchAdd({
         ? createPortal(
             <div
               data-search-dropdown="true"
-              className="hud-scrollbar fixed z-[1000] max-h-64 overflow-y-auto rounded-2xl border border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] shadow-lg backdrop-blur"
+              className="hud-scrollbar fixed z-[1000] overflow-y-auto rounded-2xl border border-[color:var(--hud-border)] bg-[color:var(--hud-surface-solid)] shadow-lg backdrop-blur"
               style={{
                 left: anchor.left,
                 top: anchor.top,
                 width: anchor.width,
+                maxHeight: anchor.maxHeight,
+                transform: anchor.placeAbove ? "translateY(-100%)" : undefined,
               }}
             >
               {results.map((r) => (
