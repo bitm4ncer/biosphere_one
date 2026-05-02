@@ -145,9 +145,24 @@ body {
   --hud-accent-glow:    rgba(212, 255, 56, 0.4);
   --hud-warn:           #f59e0b;
   --hud-text:           #e8f0d9;
-  --hud-text-muted:     #6b7280;
-  --hud-text-label:     #9ca3af;
+  --hud-text-muted:     #9aa3b3;
+  --hud-text-label:     #b8bfc9;
   --hud-danger:         #f97066;
+}
+
+/* Respect users with vestibular sensitivity / reduced-motion preference.
+ * Disables decorative animations (pulsing geolocate dot, search-marker drop,
+ * loading shimmer) without breaking the underlying state — the dot still
+ * renders, it just doesn't animate. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Retro scanline texture — applied to sidebar panel backgrounds */
