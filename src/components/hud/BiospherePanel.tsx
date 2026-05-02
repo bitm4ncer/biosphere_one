@@ -28,13 +28,58 @@ interface BiospherePanelProps {
   onNo2OpacityChange: (o: number) => void;
 }
 
+interface LegendSpec {
+  gradient: string;
+  minLabel: string;
+  midLabel?: string;
+  maxLabel: string;
+  unit?: string;
+}
+
 // Standardised colour ramps used by the underlying tile services.
 // Kept inline as Tailwind-friendly CSS gradients so a separate stylesheet
 // is not required.
 const SPECIES_GRADIENT =
   "linear-gradient(to right, #fde047, #fb923c, #ef4444, #7f1d1d)";
-const FOREST_LOSS_GRADIENT =
-  "linear-gradient(to right, #fbcfe8, #ec4899, #be123c)";
+
+// Forest Loss legends adapt to whichever GFW product resolved — the
+// visible map colours differ a lot between GLAD-DIST (blue/cyan
+// disturbance pixels), GLAD-L (red/orange alert dots) and Hansen TCL
+// (pink-by-year). A single static gradient would always lie about
+// what the user actually sees on the map.
+const FOREST_LOSS_LEGENDS: Record<
+  string,
+  Omit<LegendSpec, "unit"> & { unit?: string }
+> = {
+  "GLAD-DIST integrated alerts": {
+    gradient: "linear-gradient(to right, #67e8f9, #22d3ee, #1e40af)",
+    minLabel: "low confidence",
+    midLabel: "moderate",
+    maxLabel: "high confidence",
+    unit: "vegetation disturbance",
+  },
+  "GLAD-L weekly alerts": {
+    gradient: "linear-gradient(to right, #fed7aa, #fb923c, #b91c1c)",
+    minLabel: "older",
+    midLabel: "this month",
+    maxLabel: "this week",
+    unit: "tree-cover loss alerts",
+  },
+  "Hansen tree-cover loss (≥30 %)": {
+    gradient: "linear-gradient(to right, #fbcfe8, #ec4899, #581c87)",
+    minLabel: "2001",
+    midLabel: "2013",
+    maxLabel: "2024",
+    unit: "year of tree-cover loss",
+  },
+};
+const FOREST_LOSS_LEGEND_FALLBACK: LegendSpec = {
+  gradient: "linear-gradient(to right, #67e8f9, #22d3ee, #1e40af)",
+  minLabel: "older",
+  maxLabel: "recent",
+  unit: "tree-cover / disturbance",
+};
+
 const NO2_GRADIENT =
   "linear-gradient(to right, #1e3a8a, #06b6d4, #fde047, #fb923c, #b91c1c)";
 
@@ -81,12 +126,12 @@ export function BiospherePanel(props: BiospherePanelProps) {
                 ? props.forestLossResolvedLabel
                 : "no source available"
         }
-        legend={{
-          gradient: FOREST_LOSS_GRADIENT,
-          minLabel: "older",
-          maxLabel: "recent",
-          unit: "tree-cover loss",
-        }}
+        legend={
+          props.forestLossResolvedLabel
+            ? FOREST_LOSS_LEGENDS[props.forestLossResolvedLabel] ??
+              FOREST_LOSS_LEGEND_FALLBACK
+            : FOREST_LOSS_LEGEND_FALLBACK
+        }
       />
 
       <BiosphereLayerCard
@@ -115,14 +160,6 @@ export function BiospherePanel(props: BiospherePanelProps) {
       />
     </div>
   );
-}
-
-interface LegendSpec {
-  gradient: string;
-  minLabel: string;
-  midLabel?: string;
-  maxLabel: string;
-  unit?: string;
 }
 
 interface BiosphereLayerCardProps {
