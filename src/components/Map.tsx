@@ -25,11 +25,7 @@ import type { Bbox, Credentials } from "@/types/sentinel";
 import { SettingsGear } from "./SettingsGear";
 import { SearchBox } from "./SearchBox";
 import type { GeocodeResult } from "@/lib/geocode";
-import {
-  gibsDateNDaysAgo,
-  gibsTileUrl,
-  gibsYesterday,
-} from "@/lib/gibs";
+import { gibsDateNDaysAgo, gibsTileUrl } from "@/lib/gibs";
 import { RAILWAY_TILE_URLS, RAILWAY_ATTRIBUTION, RAILWAY_MAX_ZOOM } from "@/lib/railway";
 import { fetchRailNetwork } from "@/lib/hiking/overpass";
 import {

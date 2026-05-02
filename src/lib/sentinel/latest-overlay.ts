@@ -1,13 +1,6 @@
 import type { Bbox } from "@/types/sentinel";
 import { fetchFrame } from "./process";
 
-export interface LatestOverlayOptions {
-  bbox: Bbox;
-  accessToken: string;
-  daysBack?: number;
-  maxPixelsPerSide?: number;
-}
-
 export interface LatestOverlayResult {
   blob: Blob;
   from: string;
@@ -46,31 +39,6 @@ export function pickFetchResolution(
   return aspect >= 1
     ? { width: longest, height: shortest }
     : { width: shortest, height: longest };
-}
-
-export async function fetchLatestOverlay({
-  bbox,
-  accessToken,
-  daysBack = 14,
-  maxPixelsPerSide = 2048,
-}: LatestOverlayOptions): Promise<LatestOverlayResult> {
-  const now = new Date();
-  const from = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
-  const fromIso = from.toISOString();
-  const toIso = now.toISOString();
-
-  const { width, height } = pickFetchResolution(bbox, maxPixelsPerSide);
-
-  const blob = await fetchFrame({
-    bbox,
-    from: fromIso,
-    to: toIso,
-    width,
-    height,
-    accessToken,
-  });
-
-  return { blob, from: fromIso, to: toIso, bbox, width, height };
 }
 
 export interface DayOverlayOptions {

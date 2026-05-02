@@ -38,11 +38,9 @@ interface HikingState {
   selectCandidate: (id: string | null) => void;
   finalizeRoute: () => void;
   unfinalize: () => void;
-  clearRoute: () => void;
 
   setPhase: (p: HikingPhase) => void;
   setNotice: (n: string | null) => void;
-  reset: () => void;
 }
 
 const DEFAULTS = {
@@ -125,25 +123,9 @@ export const useHiking = create<HikingState>()(
         if (s.selectedCandidateId) set({ finalized: true });
       },
       unfinalize: () => set({ finalized: false }),
-      clearRoute: () =>
-        set({
-          candidates: [],
-          selectedCandidateId: null,
-          finalized: false,
-          phase: { kind: "idle" },
-        }),
 
       setPhase: (phase) => set({ phase }),
       setNotice: (notice) => set({ notice }),
-      reset: () =>
-        set({
-          waypoints: [],
-          candidates: [],
-          selectedCandidateId: null,
-          finalized: false,
-          phase: { kind: "idle" },
-          notice: null,
-        }),
     }),
     {
       name: "biosphere1:hiking",
