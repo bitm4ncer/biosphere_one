@@ -1449,22 +1449,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     map.addControl(geolocate, "bottom-left");
     geolocateRef.current = geolocate;
 
-    // iOS DeviceOrientationEvent.requestPermission() must be called inside a
-    // real user-gesture handler. The existing path through onGeolocate is too
-    // late — by then navigator.geolocation has consumed the gesture and iOS
-    // silently denies the prompt. Hook the geolocate button's click directly
-    // so the compass-permission dialog opens right after the location one.
-    // Non-iOS browsers (no requestPermission API) return true synchronously,
-    // so this is a no-op there. Safe to call repeatedly: iOS caches the
-    // first response.
-    const askCompassOnGeolocateTap = () => {
-      void requestCompassPermission();
-    };
-    const geoBtnEl = map
-      .getContainer()
-      .querySelector<HTMLElement>(".maplibregl-ctrl-geolocate");
-    geoBtnEl?.addEventListener("click", askCompassOnGeolocateTap);
-
     // Remember when the user has previously granted location access so
     // subsequent app launches can auto-trigger the geolocate control
     // without a manual tap. The browser/OS still owns the permission;
@@ -1603,7 +1587,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       window.removeEventListener("unhandledrejection", onUnhandled);
       map.off("error", onMapError);
       resizeObserver.disconnect();
-      geoBtnEl?.removeEventListener("click", askCompassOnGeolocateTap);
       map.remove();
       mapRef.current = null;
       setMapInstance(null);
@@ -1693,6 +1676,13 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     map.on("zoom", applyScale);
 
     let compassStarted = false;
+    // True for the very next geolocate event we receive, then resets. We
+    // flip it back to true on every crosshair-button tap so the map travels
+    // to the user explicitly, rather than relying on GeolocateControl's
+    // internal fitBounds (which doesn't always trigger when `hash: true`
+    // already restored a different camera). Initial value is true so the
+    // auto-trigger on launch centres the viewport on the user's position.
+    let panToNextFix = true;
 
     const startCompassSubscription = async () => {
       if (compassStarted) return;
@@ -1729,6 +1719,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       setLivePos([e.coords.longitude, e.coords.latitude]);
       setGeoStatus(`Located · ±${Math.round(e.coords.accuracy)}m`);
       if (!compassStarted) void startCompassSubscription();
+      if (panToNextFix) {
+        panToNextFix = false;
+        map.flyTo({
+          center: [e.coords.longitude, e.coords.latitude],
+          zoom: Math.max(map.getZoom(), 14),
+          duration: 900,
+        });
+      }
     };
 
     const onTrackStart = () => {
@@ -1776,6 +1774,9 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     const onBtnClick = () => {
       setGeoStatus("Requesting location…");
       void startCompassSubscription();
+      // Re-arm the pan flag so the next geolocate fix centers the viewport
+      // on the user — that's the whole point of the crosshair tap.
+      panToNextFix = true;
     };
     btn?.addEventListener("click", onBtnClick);
 
