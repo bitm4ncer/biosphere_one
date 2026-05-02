@@ -19,7 +19,7 @@ import {
   pastelForWaypoint,
 } from "@/components/hiking/useHikingLayers";
 import { ElevationChart } from "@/components/hiking/ElevationChart";
-import { geocode, type GeocodeResult } from "@/lib/geocode";
+import { geocode, prettyCategory, type GeocodeResult } from "@/lib/geocode";
 
 interface Props {
   mapRef: React.MutableRefObject<MLMap | null>;
@@ -236,7 +236,7 @@ export function HikingPanel({ mapRef }: Props) {
             >
               <GpsIcon /> GPS
             </button>
-            <SearchAdd onPick={handleAddSearchResult} />
+            <SearchAdd onPick={handleAddSearchResult} mapRef={mapRef} />
           </div>
         </div>
       </HudPanel>
@@ -664,8 +664,10 @@ function ToggleSwitch({
 
 function SearchAdd({
   onPick,
+  mapRef,
 }: {
   onPick: (r: GeocodeResult) => void;
+  mapRef: React.MutableRefObject<MLMap | null>;
 }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<GeocodeResult[]>([]);
@@ -693,7 +695,17 @@ function SearchAdd({
     setBusy(true);
     const handle = window.setTimeout(async () => {
       try {
-        const out = await geocode(text, { limit: 6, signal: ctrl.signal });
+        // Bias toward the map's current centre so nearby supermarkets,
+        // cafés, gas stations and sights outrank distant string matches.
+        const centre = mapRef.current?.getCenter();
+        const nearby: [number, number] | undefined = centre
+          ? [centre.lng, centre.lat]
+          : undefined;
+        const out = await geocode(text, {
+          limit: 8,
+          signal: ctrl.signal,
+          nearby,
+        });
         if (ctrl.signal.aborted) return;
         setResults(out);
         setOpen(true);
@@ -785,9 +797,14 @@ function SearchAdd({
                     setResults([]);
                     setOpen(false);
                   }}
-                  className="flex w-full items-start gap-1 border-b border-[color:var(--hud-border)] px-2 py-1.5 text-left text-[11px] text-[color:var(--hud-text)] last:border-b-0 hover:bg-[var(--hud-accent-soft)] hover:text-[color:var(--hud-accent)]"
+                  className="flex w-full items-start gap-1.5 border-b border-[color:var(--hud-border)] px-2 py-1.5 text-left text-[11px] text-[color:var(--hud-text)] last:border-b-0 hover:bg-[var(--hud-accent-soft)] hover:text-[color:var(--hud-accent)]"
                 >
-                  <span className="truncate">{r.label || r.name}</span>
+                  <span className="min-w-0 flex-1 truncate">{r.label || r.name}</span>
+                  {prettyCategory(r.category) && (
+                    <span className="shrink-0 rounded-full border border-[color:var(--hud-border)] px-1.5 py-0.5 text-[9px] text-[color:var(--hud-text-muted)]">
+                      {prettyCategory(r.category)}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>,

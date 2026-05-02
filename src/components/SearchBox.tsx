@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { geocode, type GeocodeResult } from "@/lib/geocode";
+import { geocode, prettyCategory, type GeocodeResult } from "@/lib/geocode";
 
 interface Props {
   onSelect: (result: GeocodeResult) => void;
+  /** [lng, lat] — used to bias geocoding toward what's on screen, so
+   * supermarkets / cafés / sights nearby outrank distant string matches. */
+  nearby?: [number, number];
 }
 
 type State =
@@ -13,7 +16,7 @@ type State =
   | { kind: "ok"; results: GeocodeResult[] }
   | { kind: "error"; message: string };
 
-export function SearchBox({ onSelect }: Props) {
+export function SearchBox({ onSelect, nearby }: Props) {
   const [query, setQuery] = useState("");
   const [state, setState] = useState<State>({ kind: "idle" });
   const [focused, setFocused] = useState(false);
@@ -34,7 +37,11 @@ export function SearchBox({ onSelect }: Props) {
       abortRef.current = ctrl;
       setState({ kind: "loading" });
       try {
-        const results = await geocode(query, { signal: ctrl.signal, limit: 6 });
+        const results = await geocode(query, {
+          signal: ctrl.signal,
+          limit: 8,
+          nearby,
+        });
         if (!ctrl.signal.aborted) {
           setState({ kind: "ok", results });
           setHighlight(0);
@@ -154,9 +161,9 @@ export function SearchBox({ onSelect }: Props) {
                     <div className="truncate font-medium">{r.name || r.label}</div>
                     <div className="truncate text-[10px] text-[color:var(--hud-text-muted)]">
                       {r.label.replace(r.name ? `${r.name}, ` : "", "") || "—"}
-                      {r.category && (
+                      {prettyCategory(r.category) && (
                         <span className="ml-1.5 rounded-full border border-[color:var(--hud-border)] px-1.5 py-0.5 text-[color:var(--hud-text-muted)]">
-                          {r.category}
+                          {prettyCategory(r.category)}
                         </span>
                       )}
                     </div>

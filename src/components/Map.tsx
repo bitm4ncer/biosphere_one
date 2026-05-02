@@ -2031,7 +2031,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           className="pointer-events-auto block h-9 w-9 shrink-0"
         />
         <div className="pointer-events-auto min-w-0 flex-1">
-          <SearchBox onSelect={setFlyTarget} />
+          <SearchBox onSelect={setFlyTarget} nearby={view.center} />
         </div>
         <div className="pointer-events-auto shrink-0">
           <BasemapSwitch mode={basemapMode} onModeChange={setBasemapMode} />
