@@ -1678,6 +1678,27 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     map.addControl(geolocate, "bottom-left");
     geolocateRef.current = geolocate;
 
+    // iOS DeviceOrientationEvent.requestPermission() must be invoked while
+    // transient user-activation is still fresh. MapLibre's GeolocateControl
+    // attaches a bubble-phase click listener on its button that calls
+    // navigator.geolocation.watchPosition — that call consumes the
+    // activation on iOS, so anything that asks for compass permission
+    // *after* MapLibre's handler runs (including our own bubble-phase
+    // listener further down the file) sees a denied prompt.
+    //
+    // Register a capture-phase listener on the map container that fires
+    // BEFORE the button's bubble-phase handlers. This puts requestPermission
+    // first in line, while the gesture is still uncontaminated.
+    const onContainerClickCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest(".maplibregl-ctrl-geolocate")) return;
+      void requestCompassPermission();
+    };
+    const mapContainer = map.getContainer();
+    mapContainer.addEventListener("click", onContainerClickCapture, {
+      capture: true,
+    });
+
     // Remember when the user has previously granted location access so
     // subsequent app launches can auto-trigger the geolocate control
     // without a manual tap. The browser/OS still owns the permission;
@@ -1816,6 +1837,9 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       window.removeEventListener("unhandledrejection", onUnhandled);
       map.off("error", onMapError);
       resizeObserver.disconnect();
+      mapContainer.removeEventListener("click", onContainerClickCapture, {
+        capture: true,
+      });
       map.remove();
       mapRef.current = null;
       setMapInstance(null);
