@@ -43,6 +43,7 @@ import { HudPanel } from "./hud/HudPanel";
 import { SidebarToggle } from "./SidebarToggle";
 import { HikingToggle } from "./HikingToggle";
 import { HikingPanel } from "./hud/HikingPanel";
+import { BiospherePanel } from "./hud/BiospherePanel";
 import { useHikingLayers } from "./hiking/useHikingLayers";
 
 // Live precipitation (NASA GPM IMERG). Frames are 30-min apart with
@@ -65,6 +66,12 @@ const FIRES_SOURCE_ID = "fires";
 const FIRES_LAYER_ID = "fires-layer";
 const NDVI_SOURCE_ID = "ndvi";
 const NDVI_LAYER_ID = "ndvi-layer";
+const SPECIES_SOURCE_ID = "biosphere-species";
+const SPECIES_LAYER_ID = "biosphere-species-layer";
+const FOREST_LOSS_SOURCE_ID = "biosphere-forest-loss";
+const FOREST_LOSS_LAYER_ID = "biosphere-forest-loss-layer";
+const NO2_SOURCE_ID = "biosphere-no2";
+const NO2_LAYER_ID = "biosphere-no2-layer";
 // Hybrid overlay: Esri reference layers (transparent roads, boundaries, labels)
 // — same setup Esri uses for its own "Imagery Hybrid" view.
 const HYBRID_TRANSPORT_SOURCE_ID = "hybrid-transport";
@@ -814,6 +821,261 @@ function removeFiresLayer(map: MLMap) {
   if (map.getSource(FIRES_SOURCE_ID)) map.removeSource(FIRES_SOURCE_ID);
 }
 
+// ── Biosphere panel layers ───────────────────────────────────────────
+//
+// Three independent overlays surfaced through the Biosphere sidebar
+// pane. Each follows the same shape as Fires/NDVI: ensure / update
+// opacity / remove. URLs for Forest Loss and NO₂ are resolved by
+// multi-candidate probes (mirror of `findLatestFiresSource`) because
+// their exact GIBS / GFW slugs aren't well-documented client-side.
+
+const SPECIES_ATTRIBUTION =
+  '<a href="https://www.gbif.org" target="_blank" rel="noreferrer">GBIF</a> · global biodiversity observations';
+
+const FOREST_LOSS_ATTRIBUTION =
+  '<a href="https://www.globalforestwatch.org" target="_blank" rel="noreferrer">Global Forest Watch</a> · UMD/GLAD';
+
+const NO2_ATTRIBUTION =
+  '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · NO₂ Tropospheric Column';
+
+const SPECIES_MAX_ZOOM = 12;
+const FOREST_LOSS_MAX_ZOOM = 12;
+const NO2_MAX_ZOOM = 5;
+
+// GBIF Maps API — global density tiles, no key. The point style
+// scales nicely between z=0 and z=12; @1x is the standard Retina-1
+// variant (a separate @2x exists if we ever want sharper).
+function speciesTileUrl(): string {
+  return "https://api.gbif.org/v2/map/occurrence/density/{z}/{x}/{y}@1x.png?style=classic.point&srs=EPSG%3A3857";
+}
+
+function ensureSpeciesLayer(map: MLMap, opacity: number, beforeId?: string) {
+  if (map.getLayer(SPECIES_LAYER_ID)) return;
+  if (map.getSource(SPECIES_SOURCE_ID)) map.removeSource(SPECIES_SOURCE_ID);
+  map.addSource(SPECIES_SOURCE_ID, {
+    type: "raster",
+    tiles: [speciesTileUrl()],
+    tileSize: 512,
+    maxzoom: SPECIES_MAX_ZOOM,
+    attribution: SPECIES_ATTRIBUTION,
+  });
+  map.addLayer(
+    {
+      id: SPECIES_LAYER_ID,
+      type: "raster",
+      source: SPECIES_SOURCE_ID,
+      paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
+    },
+    beforeId,
+  );
+}
+
+function updateSpeciesOpacity(map: MLMap, opacity: number) {
+  if (map.getLayer(SPECIES_LAYER_ID)) {
+    map.setPaintProperty(SPECIES_LAYER_ID, "raster-opacity", opacity);
+  }
+}
+
+function removeSpeciesLayer(map: MLMap) {
+  if (map.getLayer(SPECIES_LAYER_ID)) map.removeLayer(SPECIES_LAYER_ID);
+  if (map.getSource(SPECIES_SOURCE_ID)) map.removeSource(SPECIES_SOURCE_ID);
+}
+
+// Forest Loss probe: multiple GFW tile slugs, first that returns 200
+// wins. Module-level cache so subsequent toggles skip the probe.
+const FOREST_LOSS_PROBE_TILE = { z: 4, x: 9, y: 7 }; // covers Brazilian Amazon
+
+interface ForestLossSource {
+  slug: string;
+  label: string;
+}
+const FOREST_LOSS_SOURCE_CANDIDATES: ForestLossSource[] = [
+  { slug: "umd_glad_dist_alerts/latest/dynamic", label: "GLAD-DIST integrated alerts" },
+  { slug: "umd_glad_landsat_alerts/latest/default", label: "GLAD-L weekly alerts" },
+  { slug: "umd_tree_cover_loss/latest/tcd_30", label: "Hansen tree-cover loss (≥30 %)" },
+];
+let forestLossProbed: ForestLossSource | null = null;
+let forestLossProbeInFlight: Promise<ForestLossSource | null> | null = null;
+let forestLossLastProbedUrl: string | null = null;
+
+function forestLossTileUrlFor(slug: string): string {
+  return `https://tiles.globalforestwatch.org/${slug}/{z}/{x}/{y}.png`;
+}
+
+async function findLatestForestLossSource(): Promise<ForestLossSource | null> {
+  if (forestLossProbed) return forestLossProbed;
+  if (forestLossProbeInFlight) return forestLossProbeInFlight;
+  forestLossProbeInFlight = (async () => {
+    for (const candidate of FOREST_LOSS_SOURCE_CANDIDATES) {
+      const url = forestLossTileUrlFor(candidate.slug)
+        .replace("{z}", String(FOREST_LOSS_PROBE_TILE.z))
+        .replace("{x}", String(FOREST_LOSS_PROBE_TILE.x))
+        .replace("{y}", String(FOREST_LOSS_PROBE_TILE.y));
+      forestLossLastProbedUrl = url;
+      if (await probeUrl(url)) {
+        forestLossProbed = candidate;
+        return candidate;
+      }
+    }
+    return null;
+  })();
+  try {
+    return await forestLossProbeInFlight;
+  } finally {
+    forestLossProbeInFlight = null;
+  }
+}
+
+function getLastProbedForestLossUrl(): string | null {
+  return forestLossLastProbedUrl;
+}
+
+function ensureForestLossLayer(
+  map: MLMap,
+  opacity: number,
+  slug: string,
+  beforeId?: string,
+) {
+  if (map.getLayer(FOREST_LOSS_LAYER_ID)) return;
+  if (map.getSource(FOREST_LOSS_SOURCE_ID)) map.removeSource(FOREST_LOSS_SOURCE_ID);
+  map.addSource(FOREST_LOSS_SOURCE_ID, {
+    type: "raster",
+    tiles: [forestLossTileUrlFor(slug)],
+    tileSize: 256,
+    maxzoom: FOREST_LOSS_MAX_ZOOM,
+    attribution: FOREST_LOSS_ATTRIBUTION,
+  });
+  map.addLayer(
+    {
+      id: FOREST_LOSS_LAYER_ID,
+      type: "raster",
+      source: FOREST_LOSS_SOURCE_ID,
+      paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
+    },
+    beforeId,
+  );
+}
+
+function updateForestLossOpacity(map: MLMap, opacity: number) {
+  if (map.getLayer(FOREST_LOSS_LAYER_ID)) {
+    map.setPaintProperty(FOREST_LOSS_LAYER_ID, "raster-opacity", opacity);
+  }
+}
+
+function removeForestLossLayer(map: MLMap) {
+  if (map.getLayer(FOREST_LOSS_LAYER_ID)) map.removeLayer(FOREST_LOSS_LAYER_ID);
+  if (map.getSource(FOREST_LOSS_SOURCE_ID)) map.removeSource(FOREST_LOSS_SOURCE_ID);
+}
+
+// NO₂ probe: NASA GIBS Tropospheric NO₂ column. OMI is the long-tail
+// reliable product; Sentinel-5P TROPOMI as fallback if a future
+// rename happens. Probe through (layer, matrix, daysBack) until 200.
+const NO2_PROBE_TILE = { z: 2, x: 2, y: 1 };
+
+interface No2Source {
+  layer: string;
+  matrix: string;
+  date: string;
+  label: string;
+}
+const NO2_LAYER_CANDIDATES = [
+  { layer: "OMI_NO2_Tropospheric_Column", matrix: "GoogleMapsCompatible_Level5", label: "NASA OMI" },
+  { layer: "OMI_NO2_Tropospheric_Column", matrix: "GoogleMapsCompatible_Level6", label: "NASA OMI" },
+  {
+    layer: "Sentinel-5P_TROPOMI_NO2_Tropospheric_Column_Daily",
+    matrix: "GoogleMapsCompatible_Level5",
+    label: "Sentinel-5P TROPOMI",
+  },
+] as const;
+
+let no2Probed: No2Source | null = null;
+let no2ProbeInFlight: Promise<No2Source | null> | null = null;
+let no2LastProbedUrl: string | null = null;
+
+function no2TileUrl(layer: string, matrix: string, date: string): string {
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${date}/${matrix}/{z}/{y}/{x}.png`;
+}
+
+function no2ProbeUrl(layer: string, matrix: string, date: string): string {
+  return no2TileUrl(layer, matrix, date)
+    .replace("{z}", String(NO2_PROBE_TILE.z))
+    .replace("{y}", String(NO2_PROBE_TILE.y))
+    .replace("{x}", String(NO2_PROBE_TILE.x));
+}
+
+async function findLatestNo2Source(): Promise<No2Source | null> {
+  if (no2Probed) return no2Probed;
+  if (no2ProbeInFlight) return no2ProbeInFlight;
+  no2ProbeInFlight = (async () => {
+    for (const candidate of NO2_LAYER_CANDIDATES) {
+      for (let daysBack = 1; daysBack <= 7; daysBack++) {
+        const date = gibsDateNDaysAgo(daysBack);
+        const url = no2ProbeUrl(candidate.layer, candidate.matrix, date);
+        no2LastProbedUrl = url;
+        if (await probeUrl(url)) {
+          no2Probed = { ...candidate, date };
+          return no2Probed;
+        }
+      }
+    }
+    return null;
+  })();
+  try {
+    return await no2ProbeInFlight;
+  } finally {
+    no2ProbeInFlight = null;
+  }
+}
+
+function getLastProbedNo2Url(): string | null {
+  return no2LastProbedUrl;
+}
+
+function ensureNo2Layer(
+  map: MLMap,
+  opacity: number,
+  source: No2Source,
+  beforeId?: string,
+) {
+  if (map.getLayer(NO2_LAYER_ID)) return;
+  if (map.getSource(NO2_SOURCE_ID)) map.removeSource(NO2_SOURCE_ID);
+  map.addSource(NO2_SOURCE_ID, {
+    type: "raster",
+    tiles: [no2TileUrl(source.layer, source.matrix, source.date)],
+    tileSize: 256,
+    maxzoom: NO2_MAX_ZOOM,
+    attribution: NO2_ATTRIBUTION,
+  });
+  map.addLayer(
+    {
+      id: NO2_LAYER_ID,
+      type: "raster",
+      source: NO2_SOURCE_ID,
+      paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
+    },
+    beforeId,
+  );
+}
+
+function updateNo2Opacity(map: MLMap, opacity: number) {
+  if (map.getLayer(NO2_LAYER_ID)) {
+    map.setPaintProperty(NO2_LAYER_ID, "raster-opacity", opacity);
+  }
+}
+
+function removeNo2Layer(map: MLMap) {
+  if (map.getLayer(NO2_LAYER_ID)) map.removeLayer(NO2_LAYER_ID);
+  if (map.getSource(NO2_SOURCE_ID)) map.removeSource(NO2_SOURCE_ID);
+}
+
+/** First existing layer id from the list, used as `beforeId` for stacking. */
+function firstExistingLayerId(map: MLMap, ids: string[]): string | undefined {
+  for (const id of ids) {
+    if (map.getLayer(id)) return id;
+  }
+  return undefined;
+}
+
 function bboxCoordinates(
   bbox: Bbox,
 ): [[number, number], [number, number], [number, number], [number, number]] {
@@ -956,6 +1218,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     railStyle,
     firesOpacity,
     ndviOpacity,
+    speciesOn,
+    speciesOpacity,
+    forestLossOn,
+    forestLossOpacity,
+    no2On,
+    no2Opacity,
     setImageBasemapId,
     setVectorBasemapId,
     setBasemapMode,
@@ -968,6 +1236,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     setRailStyle,
     setFiresOpacity,
     setNdviOpacity,
+    setSpeciesOn,
+    setSpeciesOpacity,
+    setForestLossOn,
+    setForestLossOpacity,
+    setNo2On,
+    setNo2Opacity,
   } = useSettings();
   const active =
     basemapMode === "vector" ? vectorBasemapId : imageBasemapId;
@@ -993,6 +1267,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   // in the 7-day window of any candidate layer was reachable.
   const [firesResolved, setFiresResolved] = useState<FiresProbe | null>(null);
   const [firesProbeFinished, setFiresProbeFinished] = useState(false);
+
+  // Biosphere panel — Forest Loss probe + NO₂ probe.
+  const [forestLossResolved, setForestLossResolved] = useState<ForestLossSource | null>(null);
+  const [forestLossProbeFinished, setForestLossProbeFinished] = useState(false);
+  const [no2Resolved, setNo2Resolved] = useState<No2Source | null>(null);
+  const [no2ProbeFinished, setNo2ProbeFinished] = useState(false);
   // Debug HUD activation. Triggered by ANY of:
   //   - URL contains `debug=1` (or just `debug` — the test for any
   //     truthy value also handles `?debug=1>` typos and `#debug=1`).
@@ -1024,7 +1304,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     return () => window.clearInterval(id);
   }, [debugOn]);
   const [weatherLoading, setWeatherLoading] = useState(false);
-  type SidebarPane = "control" | "hiking";
+  type SidebarPane = "control" | "hiking" | "biosphere";
   type SheetState = "peek" | "half" | "full";
   // Active pane is always defined: in peek state the tabs still highlight one.
   const [activePane, setActivePane] = useState<SidebarPane>("control");
@@ -2016,6 +2296,141 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     updateFiresOpacity(map, firesOpacity);
   }, [firesOn, firesOpacity]);
 
+  // ── Biosphere · Species (GBIF) ────────────────────────────────────
+  useEffect(() => {
+    if (!speciesOn) {
+      const map = mapRef.current;
+      if (map) removeSpeciesLayer(map);
+    }
+  }, [speciesOn]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !speciesOn) return;
+    const apply = () => {
+      // Stack below Fires so fire dots remain readable, above NO₂.
+      const beforeId = firstExistingLayerId(map, [
+        FIRES_LAYER_ID,
+        OVERLAY_LAYER_ID,
+      ]);
+      ensureSpeciesLayer(map, speciesOpacity, beforeId);
+    };
+    if (map.isStyleLoaded()) apply();
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speciesOn, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !speciesOn) return;
+    updateSpeciesOpacity(map, speciesOpacity);
+  }, [speciesOn, speciesOpacity]);
+
+  // ── Biosphere · Forest Loss (Global Forest Watch) ─────────────────
+  useEffect(() => {
+    if (!forestLossOn) {
+      const map = mapRef.current;
+      if (map) removeForestLossLayer(map);
+    }
+  }, [forestLossOn]);
+
+  useEffect(() => {
+    if (!forestLossOn) return;
+    if (forestLossProbeFinished) return;
+    let cancelled = false;
+    findLatestForestLossSource().then((found) => {
+      if (cancelled) return;
+      setForestLossResolved(found);
+      setForestLossProbeFinished(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [forestLossOn, forestLossProbeFinished]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !forestLossOn) return;
+    if (!forestLossResolved) return;
+    const slug = forestLossResolved.slug;
+    const apply = () => {
+      // Stack below Species so observation dots stay legible.
+      const beforeId = firstExistingLayerId(map, [
+        SPECIES_LAYER_ID,
+        FIRES_LAYER_ID,
+        OVERLAY_LAYER_ID,
+      ]);
+      ensureForestLossLayer(map, forestLossOpacity, slug, beforeId);
+    };
+    if (map.isStyleLoaded()) apply();
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forestLossOn, active, forestLossResolved]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !forestLossOn) return;
+    updateForestLossOpacity(map, forestLossOpacity);
+  }, [forestLossOn, forestLossOpacity]);
+
+  // ── Biosphere · NO₂ (NASA OMI / Sentinel-5P) ──────────────────────
+  useEffect(() => {
+    if (!no2On) {
+      const map = mapRef.current;
+      if (map) removeNo2Layer(map);
+    }
+  }, [no2On]);
+
+  useEffect(() => {
+    if (!no2On) return;
+    if (no2ProbeFinished) return;
+    let cancelled = false;
+    findLatestNo2Source().then((found) => {
+      if (cancelled) return;
+      setNo2Resolved(found);
+      setNo2ProbeFinished(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [no2On, no2ProbeFinished]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !no2On) return;
+    if (!no2Resolved) return;
+    const source = no2Resolved;
+    const apply = () => {
+      // Stack at the bottom of the biosphere stack (gradient under
+      // points), but above clouds/ndvi/rail.
+      const beforeId = firstExistingLayerId(map, [
+        FOREST_LOSS_LAYER_ID,
+        SPECIES_LAYER_ID,
+        FIRES_LAYER_ID,
+        OVERLAY_LAYER_ID,
+      ]);
+      ensureNo2Layer(map, no2Opacity, source, beforeId);
+    };
+    if (map.isStyleLoaded()) apply();
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [no2On, active, no2Resolved]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !no2On) return;
+    updateNo2Opacity(map, no2Opacity);
+  }, [no2On, no2Opacity]);
+
   useEffect(() => {
     if (!ndviOn) {
       const map = mapRef.current;
@@ -2397,6 +2812,29 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           </button>
           <button
             type="button"
+            onClick={() => selectPane("biosphere")}
+            data-active={activePane === "biosphere" && sidebarOpen}
+            aria-pressed={activePane === "biosphere" && sidebarOpen}
+            aria-label="Biosphere"
+            className="hud-sheet-tab"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M2.5 13.5 C2.5 7.5 7.5 2.5 13.5 2.5 C13.5 8.5 8.5 13.5 2.5 13.5 Z" />
+              <path d="M3.5 12.5 L12.5 3.5" />
+            </svg>
+          </button>
+          <button
+            type="button"
             onClick={() => selectPane("hiking")}
             data-active={activePane === "hiking" && sidebarOpen}
             aria-pressed={activePane === "hiking" && sidebarOpen}
@@ -2474,7 +2912,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               </span>
             </div>
             <span className="hud-label justify-self-center truncate text-center">
-              {activePane === "hiking" ? "Routes" : "Map Controls"}
+              {activePane === "hiking"
+                ? "Routes"
+                : activePane === "biosphere"
+                  ? "Biosphere"
+                  : "Map Controls"}
             </span>
             <div className="justify-self-end">
               {/* Collapse to peek — mobile only, on the right; arrow-down
@@ -2506,6 +2948,26 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 pt-3 pb-3">
             {activePane === "hiking" ? (
               <HikingPanel mapRef={mapRef} />
+            ) : activePane === "biosphere" ? (
+              <BiospherePanel
+                speciesOn={speciesOn}
+                speciesOpacity={speciesOpacity}
+                onSpeciesOnChange={setSpeciesOn}
+                onSpeciesOpacityChange={setSpeciesOpacity}
+                forestLossOn={forestLossOn}
+                forestLossOpacity={forestLossOpacity}
+                forestLossProbeFinished={forestLossProbeFinished}
+                forestLossResolvedLabel={forestLossResolved?.label ?? null}
+                onForestLossOnChange={setForestLossOn}
+                onForestLossOpacityChange={setForestLossOpacity}
+                no2On={no2On}
+                no2Opacity={no2Opacity}
+                no2ProbeFinished={no2ProbeFinished}
+                no2ResolvedLabel={no2Resolved?.label ?? null}
+                no2ResolvedDate={no2Resolved?.date ?? null}
+                onNo2OnChange={setNo2On}
+                onNo2OpacityChange={setNo2Opacity}
+              />
             ) : (
               <>
                 <HudPanel className="hud-mono">
@@ -2622,6 +3084,19 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           firesResolvedLayer={firesResolved?.layer ?? null}
           firesResolvedDate={firesResolved?.date ?? null}
           firesProbeFinished={firesProbeFinished}
+          speciesOn={speciesOn}
+          speciesOpacity={speciesOpacity}
+          forestLossOn={forestLossOn}
+          forestLossOpacity={forestLossOpacity}
+          forestLossProbeFinished={forestLossProbeFinished}
+          forestLossResolvedLabel={forestLossResolved?.label ?? null}
+          forestLossLastProbedUrl={getLastProbedForestLossUrl()}
+          no2On={no2On}
+          no2Opacity={no2Opacity}
+          no2ProbeFinished={no2ProbeFinished}
+          no2ResolvedLabel={no2Resolved?.label ?? null}
+          no2ResolvedDate={no2Resolved?.date ?? null}
+          no2LastProbedUrl={getLastProbedNo2Url()}
           lastBasemapKey={lastAppliedBasemapKeyRef.current}
           basemapMode={basemapMode}
           imageBasemapId={imageBasemapId}
@@ -3628,6 +4103,19 @@ interface DebugHudProps {
   firesResolvedLayer: string | null;
   firesResolvedDate: string | null;
   firesProbeFinished: boolean;
+  speciesOn: boolean;
+  speciesOpacity: number;
+  forestLossOn: boolean;
+  forestLossOpacity: number;
+  forestLossProbeFinished: boolean;
+  forestLossResolvedLabel: string | null;
+  forestLossLastProbedUrl: string | null;
+  no2On: boolean;
+  no2Opacity: number;
+  no2ProbeFinished: boolean;
+  no2ResolvedLabel: string | null;
+  no2ResolvedDate: string | null;
+  no2LastProbedUrl: string | null;
   lastBasemapKey: string | null;
   basemapMode: BasemapMode;
   imageBasemapId: string;
@@ -3654,6 +4142,19 @@ function DebugHud({
   firesResolvedLayer,
   firesResolvedDate,
   firesProbeFinished,
+  speciesOn,
+  speciesOpacity,
+  forestLossOn,
+  forestLossOpacity,
+  forestLossProbeFinished,
+  forestLossResolvedLabel,
+  forestLossLastProbedUrl,
+  no2On,
+  no2Opacity,
+  no2ProbeFinished,
+  no2ResolvedLabel,
+  no2ResolvedDate,
+  no2LastProbedUrl,
   lastBasemapKey,
   basemapMode,
   imageBasemapId,
@@ -3715,6 +4216,47 @@ function DebugHud({
           ? `${firesResolvedLayer.replace("_Thermal_Anomalies_375m_All", "").replace("_Thermal_Anomalies_All", "")} · ${firesResolvedDate}`
           : "(no candidate layer/date returned 200)"}
       </div>
+      <div>
+        species: on={String(speciesOn)} · opacity={Math.round(speciesOpacity * 100)}% · layer-present={String(layerIds.includes("biosphere-species-layer"))}
+      </div>
+      <div>
+        forest-loss: on={String(forestLossOn)} ·{" "}
+        {!forestLossOn
+          ? "—"
+          : !forestLossProbeFinished
+            ? "(probing…)"
+            : forestLossResolvedLabel
+              ? forestLossResolvedLabel
+              : "(no candidate returned 200)"}
+        {" · "}layer-present={String(layerIds.includes("biosphere-forest-loss-layer"))}
+      </div>
+      {forestLossLastProbedUrl && forestLossOn && (
+        <div className="break-all text-amber-300">
+          last probe (forest-loss):{" "}
+          <a href={forestLossLastProbedUrl} target="_blank" rel="noreferrer" className="underline">
+            {forestLossLastProbedUrl.slice(-80)}
+          </a>
+        </div>
+      )}
+      <div>
+        no2: on={String(no2On)} ·{" "}
+        {!no2On
+          ? "—"
+          : !no2ProbeFinished
+            ? "(probing…)"
+            : no2ResolvedLabel
+              ? `${no2ResolvedLabel}${no2ResolvedDate ? ` · ${no2ResolvedDate}` : ""}`
+              : "(no candidate returned 200)"}
+        {" · "}opacity={Math.round(no2Opacity * 100)}%
+      </div>
+      {no2LastProbedUrl && no2On && (
+        <div className="break-all text-amber-300">
+          last probe (no2):{" "}
+          <a href={no2LastProbedUrl} target="_blank" rel="noreferrer" className="underline">
+            {no2LastProbedUrl.slice(-80)}
+          </a>
+        </div>
+      )}
       <div>last basemap key: {lastBasemapKey ?? "(none)"}</div>
       <div className="mt-1">layers ({layerIds.length}): {layerIds.join(", ") || "(none)"}</div>
       <div>sources ({sourceIds.length}): {sourceIds.join(", ") || "(none)"}</div>

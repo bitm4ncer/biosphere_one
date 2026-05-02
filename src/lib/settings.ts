@@ -15,6 +15,8 @@ export type RailStyle = "tiles" | "lines";
 export type BasemapMode = "photo" | "hybrid" | "vector";
 export type OrientationMode = "north" | "route" | "heading";
 
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
 export interface Settings {
   imageBasemapId: string;
   vectorBasemapId: string;
@@ -39,6 +41,13 @@ export interface Settings {
   railStyle: RailStyle;
   firesOpacity: number;
   ndviOpacity: number;
+  /** Biosphere panel — independent overlay toggles, can stack. */
+  speciesOn: boolean;
+  speciesOpacity: number;
+  forestLossOn: boolean;
+  forestLossOpacity: number;
+  no2On: boolean;
+  no2Opacity: number;
   setImageBasemapId: (id: string) => void;
   setVectorBasemapId: (id: string) => void;
   setBasemapMode: (mode: BasemapMode) => void;
@@ -52,6 +61,12 @@ export interface Settings {
   setRailStyle: (style: RailStyle) => void;
   setFiresOpacity: (o: number) => void;
   setNdviOpacity: (o: number) => void;
+  setSpeciesOn: (on: boolean) => void;
+  setSpeciesOpacity: (o: number) => void;
+  setForestLossOn: (on: boolean) => void;
+  setForestLossOpacity: (o: number) => void;
+  setNo2On: (on: boolean) => void;
+  setNo2Opacity: (o: number) => void;
 }
 
 export const useSettings = create<Settings>()(
@@ -70,6 +85,12 @@ export const useSettings = create<Settings>()(
       railStyle: "lines",
       firesOpacity: 0.9,
       ndviOpacity: 0.7,
+      speciesOn: false,
+      speciesOpacity: 0.85,
+      forestLossOn: false,
+      forestLossOpacity: 0.85,
+      no2On: false,
+      no2Opacity: 0.55,
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
       setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
       setBasemapMode: (mode) => set({ basemapMode: mode }),
@@ -87,10 +108,16 @@ export const useSettings = create<Settings>()(
       setRailStyle: (style) => set({ railStyle: style }),
       setFiresOpacity: (o) => set({ firesOpacity: o }),
       setNdviOpacity: (o) => set({ ndviOpacity: o }),
+      setSpeciesOn: (on) => set({ speciesOn: on }),
+      setSpeciesOpacity: (o) => set({ speciesOpacity: clamp01(o) }),
+      setForestLossOn: (on) => set({ forestLossOn: on }),
+      setForestLossOpacity: (o) => set({ forestLossOpacity: clamp01(o) }),
+      setNo2On: (on) => set({ no2On: on }),
+      setNo2Opacity: (o) => set({ no2Opacity: clamp01(o) }),
     }),
     {
       name: "biosphere1:settings",
-      version: 12,
+      version: 13,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -106,10 +133,27 @@ export const useSettings = create<Settings>()(
         railStyle: state.railStyle,
         firesOpacity: state.firesOpacity,
         ndviOpacity: state.ndviOpacity,
+        speciesOn: state.speciesOn,
+        speciesOpacity: state.speciesOpacity,
+        forestLossOn: state.forestLossOn,
+        forestLossOpacity: state.forestLossOpacity,
+        no2On: state.no2On,
+        no2Opacity: state.no2Opacity,
       }),
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v12 → v13: introduce Biosphere panel layers. Independent of
+        // activeOverlay; backfill defaults for users who didn't have
+        // these fields persisted yet.
+        if (version < 13) {
+          if (typeof p.speciesOn !== "boolean") p.speciesOn = false;
+          if (typeof p.speciesOpacity !== "number") p.speciesOpacity = 0.85;
+          if (typeof p.forestLossOn !== "boolean") p.forestLossOn = false;
+          if (typeof p.forestLossOpacity !== "number") p.forestLossOpacity = 0.85;
+          if (typeof p.no2On !== "boolean") p.no2On = false;
+          if (typeof p.no2Opacity !== "number") p.no2Opacity = 0.55;
+        }
         // v11 → v12: introduce orientationMode. Default to existing
         // behaviour (north-up).
         if (version < 12) {
