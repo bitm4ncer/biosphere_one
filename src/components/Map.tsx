@@ -44,6 +44,17 @@ import { SidebarToggle } from "./SidebarToggle";
 import { HikingToggle } from "./HikingToggle";
 import { HikingPanel } from "./hud/HikingPanel";
 import { BiospherePanel } from "./hud/BiospherePanel";
+import { HistoryPanel } from "./hud/HistoryPanel";
+import {
+  fetchLandmarksForBounds,
+  landmarksFromCache,
+  type LandmarkCollection,
+  type LandmarkProperties,
+} from "@/lib/history/landmarks";
+import {
+  fetchWikipediaSummary,
+  type WikipediaSummary,
+} from "@/lib/history/wikipedia";
 import { useHikingLayers } from "./hiking/useHikingLayers";
 
 // Live precipitation (NASA GPM IMERG). Frames are 30-min apart with
@@ -571,6 +582,206 @@ function removeRailStationsLayer(map: MLMap) {
     map.removeLayer(RAIL_STATIONS_HIT_LAYER_ID);
   if (map.getSource(RAIL_STATIONS_SOURCE_ID))
     map.removeSource(RAIL_STATIONS_SOURCE_ID);
+}
+
+// ── History · historic landmarks ──────────────────────────────────────
+const HISTORY_LANDMARKS_SOURCE_ID = "history-landmarks-src";
+const HISTORY_LANDMARKS_HIT_LAYER_ID = "history-landmarks-hit";
+const HISTORY_LANDMARKS_DOT_LAYER_ID = "history-landmarks-dot";
+const HISTORY_LANDMARKS_LABEL_LAYER_ID = "history-landmarks-label";
+const HISTORY_LANDMARKS_MIN_ZOOM = 6;
+const HISTORY_UNDATED_VISIBLE_FROM = 2000;
+
+function ensureHistoryLandmarksLayer(map: MLMap, opacity: number) {
+  if (!map.getSource(HISTORY_LANDMARKS_SOURCE_ID)) {
+    map.addSource(HISTORY_LANDMARKS_SOURCE_ID, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+  }
+  if (!map.getLayer(HISTORY_LANDMARKS_HIT_LAYER_ID)) {
+    map.addLayer({
+      id: HISTORY_LANDMARKS_HIT_LAYER_ID,
+      type: "circle",
+      source: HISTORY_LANDMARKS_SOURCE_ID,
+      minzoom: HISTORY_LANDMARKS_MIN_ZOOM,
+      paint: {
+        "circle-radius": 16,
+        "circle-color": "transparent",
+        "circle-stroke-width": 0,
+      },
+    });
+  }
+  if (!map.getLayer(HISTORY_LANDMARKS_DOT_LAYER_ID)) {
+    map.addLayer({
+      id: HISTORY_LANDMARKS_DOT_LAYER_ID,
+      type: "circle",
+      source: HISTORY_LANDMARKS_SOURCE_ID,
+      minzoom: HISTORY_LANDMARKS_MIN_ZOOM,
+      paint: {
+        "circle-radius": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          6, 2,
+          10, 4,
+          14, 5.5,
+          17, 7,
+        ],
+        "circle-color": [
+          "match",
+          ["get", "source"],
+          "wikidata", "#fbbf24",
+          "#d4ff38",
+        ],
+        "circle-stroke-color": "#0a0a0b",
+        "circle-stroke-width": 1.4,
+        "circle-opacity": opacity,
+      },
+    });
+  }
+  if (!map.getLayer(HISTORY_LANDMARKS_LABEL_LAYER_ID)) {
+    map.addLayer({
+      id: HISTORY_LANDMARKS_LABEL_LAYER_ID,
+      type: "symbol",
+      source: HISTORY_LANDMARKS_SOURCE_ID,
+      minzoom: 11,
+      layout: {
+        "text-field": ["get", "name"],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          11, 9,
+          14, 11,
+          17, 12,
+        ],
+        "text-offset": [0, 1.1],
+        "text-anchor": "top",
+        "text-optional": true,
+        "text-allow-overlap": false,
+        "text-padding": 4,
+      },
+      paint: {
+        "text-color": "#e8f0d9",
+        "text-halo-color": "#0a0a0b",
+        "text-halo-width": 1.4,
+        "text-opacity": opacity,
+      },
+    });
+  }
+}
+
+function setHistoryLandmarksData(map: MLMap, data: LandmarkCollection) {
+  const src = map.getSource(HISTORY_LANDMARKS_SOURCE_ID) as unknown as
+    | { setData?: (d: LandmarkCollection) => void }
+    | undefined;
+  if (src?.setData) src.setData(data);
+}
+
+/**
+ * Filter expression: a feature is visible iff its inception year is
+ * ≤ the slider year AND it hasn't dissolved before that year. Undated
+ * features (rarely have OSM start_date) appear once the slider passes
+ * the {@link HISTORY_UNDATED_VISIBLE_FROM} cut-off — that's the
+ * pragmatic default for treating extant `historic=*` heritage sites as
+ * "current view" rather than mis-positioning at year 1500.
+ */
+function buildHistoryLandmarksFilter(year: number): maplibregl.FilterSpecification {
+  return [
+    "all",
+    [
+      "any",
+      [
+        "all",
+        ["has", "inception"],
+        ["<=", ["get", "inception"], year],
+      ],
+      [
+        "all",
+        ["!", ["has", "inception"]],
+        [">=", year, HISTORY_UNDATED_VISIBLE_FROM],
+      ],
+    ],
+    [
+      "any",
+      ["!", ["has", "dissolved"]],
+      [">=", ["get", "dissolved"], year],
+    ],
+  ] as maplibregl.FilterSpecification;
+}
+
+function applyHistoryLandmarksFilter(map: MLMap, year: number) {
+  const f = buildHistoryLandmarksFilter(year);
+  if (map.getLayer(HISTORY_LANDMARKS_HIT_LAYER_ID))
+    map.setFilter(HISTORY_LANDMARKS_HIT_LAYER_ID, f);
+  if (map.getLayer(HISTORY_LANDMARKS_DOT_LAYER_ID))
+    map.setFilter(HISTORY_LANDMARKS_DOT_LAYER_ID, f);
+  if (map.getLayer(HISTORY_LANDMARKS_LABEL_LAYER_ID))
+    map.setFilter(HISTORY_LANDMARKS_LABEL_LAYER_ID, f);
+}
+
+function applyHistoryLandmarksOpacity(map: MLMap, opacity: number) {
+  if (map.getLayer(HISTORY_LANDMARKS_DOT_LAYER_ID)) {
+    map.setPaintProperty(
+      HISTORY_LANDMARKS_DOT_LAYER_ID,
+      "circle-opacity",
+      opacity,
+    );
+  }
+  if (map.getLayer(HISTORY_LANDMARKS_LABEL_LAYER_ID)) {
+    map.setPaintProperty(
+      HISTORY_LANDMARKS_LABEL_LAYER_ID,
+      "text-opacity",
+      opacity,
+    );
+  }
+}
+
+function removeHistoryLandmarksLayer(map: MLMap) {
+  if (map.getLayer(HISTORY_LANDMARKS_LABEL_LAYER_ID))
+    map.removeLayer(HISTORY_LANDMARKS_LABEL_LAYER_ID);
+  if (map.getLayer(HISTORY_LANDMARKS_DOT_LAYER_ID))
+    map.removeLayer(HISTORY_LANDMARKS_DOT_LAYER_ID);
+  if (map.getLayer(HISTORY_LANDMARKS_HIT_LAYER_ID))
+    map.removeLayer(HISTORY_LANDMARKS_HIT_LAYER_ID);
+  if (map.getSource(HISTORY_LANDMARKS_SOURCE_ID))
+    map.removeSource(HISTORY_LANDMARKS_SOURCE_ID);
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function summaryToHtml(
+  summary: WikipediaSummary | null,
+  title: string,
+): string {
+  if (!summary) {
+    return `<div class="hud-popup-body">No Wikipedia article available for "${escapeHtml(
+      title,
+    )}".</div>`;
+  }
+  const thumb = summary.thumbnail
+    ? `<img class="hud-popup-thumb" src="${escapeHtml(
+        summary.thumbnail.source,
+      )}" alt="" />`
+    : "";
+  return `
+    <div class="hud-popup-body">
+      ${thumb}
+      <p>${escapeHtml(summary.extract)}</p>
+      <a class="hud-popup-link" href="${escapeHtml(
+        summary.url,
+      )}" target="_blank" rel="noopener noreferrer">Wikipedia ↗</a>
+    </div>
+  `;
 }
 
 const GIBS_MAX_ZOOM = 9;
@@ -1440,6 +1651,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const interactingRef = useRef(false);
   const [livePos, setLivePos] = useState<[number, number] | null>(null);
   const [liveHeadingDeg, setLiveHeadingDeg] = useState<number | null>(null);
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(0);
+  const [historyEarliestYear, setHistoryEarliestYear] = useState<number | null>(
+    null,
+  );
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const historyPopupRef = useRef<maplibregl.Popup | null>(null);
   const {
     imageBasemapId,
     vectorBasemapId,
@@ -1465,6 +1682,9 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     naturaSitesOpacity,
     landCoverOn,
     landCoverOpacity,
+    historyLandmarksOn,
+    historyLandmarksOpacity,
+    historyYear,
     setImageBasemapId,
     setVectorBasemapId,
     setBasemapMode,
@@ -1488,6 +1708,9 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     setNaturaSitesOpacity,
     setLandCoverOn,
     setLandCoverOpacity,
+    setHistoryLandmarksOn,
+    setHistoryLandmarksOpacity,
+    setHistoryYear,
   } = useSettings();
   const active =
     basemapMode === "vector" ? vectorBasemapId : imageBasemapId;
@@ -1556,7 +1779,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     return () => window.clearInterval(id);
   }, [debugOn]);
   const [weatherLoading, setWeatherLoading] = useState(false);
-  type SidebarPane = "control" | "hiking" | "biosphere";
+  type SidebarPane = "control" | "hiking" | "biosphere" | "history";
   type SheetState = "peek" | "half" | "full";
   // Active pane is always defined: in peek state the tabs still highlight one.
   const [activePane, setActivePane] = useState<SidebarPane>("control");
@@ -2688,6 +2911,173 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     updateForestLossOpacity(map, forestLossOpacity);
   }, [forestLossOn, forestLossOpacity]);
 
+  // ── History · landmarks ──────────────────────────────────────────
+  // Toggle off → wipe everything: layer + cached visible state + popup.
+  useEffect(() => {
+    if (!historyLandmarksOn) {
+      const map = mapRef.current;
+      if (map) removeHistoryLandmarksLayer(map);
+      historyPopupRef.current?.remove();
+      historyPopupRef.current = null;
+      setHistoryVisibleCount(0);
+      setHistoryEarliestYear(null);
+    }
+  }, [historyLandmarksOn]);
+
+  // Toggle on / pan / zoom → ensure layer, render cached features
+  // immediately, fetch missing tiles in the background, click handler
+  // for the Wikipedia popup.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !historyLandmarksOn) return;
+    let cancelled = false;
+    let pendingFetch: AbortController | null = null;
+
+    const recompute = (data: LandmarkCollection) => {
+      setHistoryLandmarksData(map, data);
+      setHistoryVisibleCount(data.features.length);
+      let earliest: number | null = null;
+      for (const f of data.features) {
+        const y = f.properties.inception;
+        if (typeof y !== "number") continue;
+        if (earliest === null || y < earliest) earliest = y;
+      }
+      setHistoryEarliestYear(earliest);
+    };
+
+    const refresh = () => {
+      const b = map.getBounds();
+      const bounds = {
+        west: b.getWest(),
+        south: b.getSouth(),
+        east: b.getEast(),
+        north: b.getNorth(),
+      };
+      // Instant repaint from cache so dragging never blanks the map.
+      recompute(landmarksFromCache(bounds));
+      pendingFetch?.abort();
+      pendingFetch = new AbortController();
+      setHistoryLoading(true);
+      fetchLandmarksForBounds(bounds, pendingFetch.signal)
+        .then((data) => {
+          if (cancelled) return;
+          recompute(data);
+        })
+        .catch((err) => {
+          if ((err as Error).name === "AbortError") return;
+          console.warn("[history-landmarks]", err);
+        })
+        .finally(() => {
+          if (!cancelled) setHistoryLoading(false);
+        });
+    };
+
+    const apply = () => {
+      ensureHistoryLandmarksLayer(map, historyLandmarksOpacity);
+      applyHistoryLandmarksFilter(map, historyYear);
+      refresh();
+    };
+
+    let moveTimer: number | null = null;
+    const onMoveEnd = () => {
+      if (moveTimer !== null) window.clearTimeout(moveTimer);
+      moveTimer = window.setTimeout(refresh, 400);
+    };
+
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      const feats = map.queryRenderedFeatures(e.point, {
+        layers: [HISTORY_LANDMARKS_HIT_LAYER_ID, HISTORY_LANDMARKS_DOT_LAYER_ID],
+      });
+      if (feats.length === 0) return;
+      const f = feats[0];
+      const props = f.properties as unknown as LandmarkProperties;
+      const coords = (f.geometry as GeoJSON.Point).coordinates as [
+        number,
+        number,
+      ];
+      e.preventDefault();
+      e.originalEvent?.stopPropagation();
+
+      const datePart = props.inception
+        ? `${props.inception}${props.dissolved ? `–${props.dissolved}` : ""}`
+        : "date unknown";
+      const initialHtml = `
+        <div class="hud-popup-header">
+          <span class="hud-popup-title">${escapeHtml(props.name)}</span>
+          <span class="hud-popup-meta">${escapeHtml(props.kind)} · ${datePart}</span>
+        </div>
+        <div class="hud-popup-body" data-state="loading">Loading summary…</div>
+      `;
+      historyPopupRef.current?.remove();
+      const popup = new maplibregl.Popup({
+        className: "hud-popup",
+        closeButton: true,
+        closeOnClick: true,
+        maxWidth: "280px",
+        offset: 12,
+      })
+        .setLngLat(coords)
+        .setHTML(initialHtml)
+        .addTo(map);
+      historyPopupRef.current = popup;
+
+      const title = props.wikipediaTitle;
+      if (title) {
+        fetchWikipediaSummary(title)
+          .then((summary) => {
+            if (popup !== historyPopupRef.current) return;
+            popup.setHTML(initialHtml + summaryToHtml(summary, title));
+          })
+          .catch(() => {});
+      } else {
+        popup.setHTML(
+          initialHtml +
+            `<div class="hud-popup-body">No Wikipedia article linked.</div>`,
+        );
+      }
+    };
+
+    const onEnter = () => {
+      map.getCanvas().style.cursor = "pointer";
+    };
+    const onLeave = () => {
+      map.getCanvas().style.cursor = "";
+    };
+
+    if (map.isStyleLoaded()) apply();
+    else map.once("style.load", apply);
+    map.on("style.load", apply);
+    map.on("moveend", onMoveEnd);
+    map.on("click", HISTORY_LANDMARKS_HIT_LAYER_ID, onClick);
+    map.on("mouseenter", HISTORY_LANDMARKS_HIT_LAYER_ID, onEnter);
+    map.on("mouseleave", HISTORY_LANDMARKS_HIT_LAYER_ID, onLeave);
+
+    return () => {
+      cancelled = true;
+      if (moveTimer !== null) window.clearTimeout(moveTimer);
+      pendingFetch?.abort();
+      map.off("style.load", apply);
+      map.off("moveend", onMoveEnd);
+      map.off("click", HISTORY_LANDMARKS_HIT_LAYER_ID, onClick);
+      map.off("mouseenter", HISTORY_LANDMARKS_HIT_LAYER_ID, onEnter);
+      map.off("mouseleave", HISTORY_LANDMARKS_HIT_LAYER_ID, onLeave);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyLandmarksOn, active]);
+
+  // Slider drag → no refetch, just `setFilter`. Cheap.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !historyLandmarksOn) return;
+    applyHistoryLandmarksFilter(map, historyYear);
+  }, [historyLandmarksOn, historyYear]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !historyLandmarksOn) return;
+    applyHistoryLandmarksOpacity(map, historyLandmarksOpacity);
+  }, [historyLandmarksOn, historyLandmarksOpacity]);
+
   // ── Biosphere · NO₂ (NASA OMI / Sentinel-5P) ──────────────────────
   useEffect(() => {
     if (!no2On) {
@@ -3246,6 +3636,28 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           </button>
           <button
             type="button"
+            onClick={() => selectPane("history")}
+            data-active={activePane === "history" && sidebarOpen}
+            aria-pressed={activePane === "history" && sidebarOpen}
+            aria-label="History"
+            className="hud-sheet-tab"
+          >
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M4 2 L12 2 L12 5 L8 8 L12 11 L12 14 L4 14 L4 11 L8 8 L4 5 Z" />
+            </svg>
+          </button>
+          <button
+            type="button"
             onClick={() => selectPane("hiking")}
             data-active={activePane === "hiking" && sidebarOpen}
             aria-pressed={activePane === "hiking" && sidebarOpen}
@@ -3327,7 +3739,9 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                 ? "Routes"
                 : activePane === "biosphere"
                   ? "Biosphere"
-                  : "Map Controls"}
+                  : activePane === "history"
+                    ? "History"
+                    : "Map Controls"}
             </span>
             <div className="justify-self-end">
               {/* Collapse to peek — mobile only, on the right; arrow-down
@@ -3359,6 +3773,18 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 pt-3 pb-3">
             {activePane === "hiking" ? (
               <HikingPanel mapRef={mapRef} />
+            ) : activePane === "history" ? (
+              <HistoryPanel
+                year={historyYear}
+                onYearChange={setHistoryYear}
+                earliestVisibleYear={historyEarliestYear}
+                visibleCount={historyVisibleCount}
+                loading={historyLoading}
+                landmarksOn={historyLandmarksOn}
+                landmarksOpacity={historyLandmarksOpacity}
+                onLandmarksOnChange={setHistoryLandmarksOn}
+                onLandmarksOpacityChange={setHistoryLandmarksOpacity}
+              />
             ) : activePane === "biosphere" ? (
               <BiospherePanel
                 speciesOn={speciesOn}

@@ -1144,3 +1144,91 @@ input[type="range"].hud-slider::-moz-range-thumb {
   backdrop-filter: blur(10px);
   box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.7);
 }
+
+/* ── HUD-themed MapLibre popup (used by the History tab) ────────────── */
+.hud-popup .maplibregl-popup-content {
+  background: var(--hud-surface);
+  border: 1px solid var(--hud-border-strong);
+  border-radius: 8px;
+  color: var(--hud-text);
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 10px 12px;
+  box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+}
+
+.hud-popup .maplibregl-popup-tip {
+  border-top-color: var(--hud-border-strong);
+  border-bottom-color: var(--hud-border-strong);
+}
+
+.hud-popup .maplibregl-popup-close-button {
+  color: var(--hud-text-muted);
+  padding: 4px 8px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.hud-popup .maplibregl-popup-close-button:hover {
+  background: transparent;
+  color: var(--hud-accent);
+}
+
+.hud-popup-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--hud-border);
+}
+
+.hud-popup-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--hud-text);
+  padding-right: 16px;
+}
+
+.hud-popup-meta {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--hud-text-muted);
+}
+
+.hud-popup-body {
+  font-size: 11px;
+  color: var(--hud-text);
+}
+
+.hud-popup-body[data-state="loading"] {
+  color: var(--hud-text-muted);
+  font-style: italic;
+}
+
+.hud-popup-body p {
+  margin: 4px 0 6px;
+}
+
+.hud-popup-thumb {
+  float: right;
+  width: 64px;
+  height: auto;
+  margin: 0 0 4px 8px;
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+}
+
+.hud-popup-link {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--hud-accent);
+  text-decoration: none;
+}
+
+.hud-popup-link:hover {
+  text-decoration: underline;
+}

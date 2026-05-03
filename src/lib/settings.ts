@@ -57,6 +57,11 @@ export interface Settings {
   /** ESA WorldCover 10m global land cover. */
   landCoverOn: boolean;
   landCoverOpacity: number;
+  /** History panel — historic landmarks (OSM `historic=*` + Wikidata). */
+  historyLandmarksOn: boolean;
+  historyLandmarksOpacity: number;
+  /** Currently selected year on the History timeline (1500..currentYear). */
+  historyYear: number;
   setImageBasemapId: (id: string) => void;
   setVectorBasemapId: (id: string) => void;
   setBasemapMode: (mode: BasemapMode) => void;
@@ -81,7 +86,13 @@ export interface Settings {
   setNaturaSitesOpacity: (o: number) => void;
   setLandCoverOn: (on: boolean) => void;
   setLandCoverOpacity: (o: number) => void;
+  setHistoryLandmarksOn: (on: boolean) => void;
+  setHistoryLandmarksOpacity: (o: number) => void;
+  setHistoryYear: (year: number) => void;
 }
+
+export const HISTORY_YEAR_MIN = 1500;
+export const HISTORY_YEAR_MAX = new Date().getFullYear();
 
 export const useSettings = create<Settings>()(
   persist(
@@ -110,6 +121,9 @@ export const useSettings = create<Settings>()(
       naturaSitesOpacity: 0.6,
       landCoverOn: false,
       landCoverOpacity: 0.55,
+      historyLandmarksOn: false,
+      historyLandmarksOpacity: 0.9,
+      historyYear: HISTORY_YEAR_MAX,
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
       setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
       setBasemapMode: (mode) => set({ basemapMode: mode }),
@@ -138,10 +152,20 @@ export const useSettings = create<Settings>()(
       setNaturaSitesOpacity: (o) => set({ naturaSitesOpacity: clamp01(o) }),
       setLandCoverOn: (on) => set({ landCoverOn: on }),
       setLandCoverOpacity: (o) => set({ landCoverOpacity: clamp01(o) }),
+      setHistoryLandmarksOn: (on) => set({ historyLandmarksOn: on }),
+      setHistoryLandmarksOpacity: (o) =>
+        set({ historyLandmarksOpacity: clamp01(o) }),
+      setHistoryYear: (year) =>
+        set({
+          historyYear: Math.max(
+            HISTORY_YEAR_MIN,
+            Math.min(HISTORY_YEAR_MAX, Math.round(year)),
+          ),
+        }),
     }),
     {
       name: "biosphere1:settings",
-      version: 14,
+      version: 15,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -168,10 +192,29 @@ export const useSettings = create<Settings>()(
         naturaSitesOpacity: state.naturaSitesOpacity,
         landCoverOn: state.landCoverOn,
         landCoverOpacity: state.landCoverOpacity,
+        historyLandmarksOn: state.historyLandmarksOn,
+        historyLandmarksOpacity: state.historyLandmarksOpacity,
+        historyYear: state.historyYear,
       }),
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v14 → v15: add History panel — landmarks toggle + opacity +
+        // selected year. Without numeric defaults the slider crashes on
+        // first render, so always backfill.
+        if (version < 15) {
+          if (typeof p.historyLandmarksOn !== "boolean")
+            p.historyLandmarksOn = false;
+          if (typeof p.historyLandmarksOpacity !== "number")
+            p.historyLandmarksOpacity = 0.9;
+          if (
+            typeof p.historyYear !== "number" ||
+            p.historyYear < HISTORY_YEAR_MIN ||
+            p.historyYear > HISTORY_YEAR_MAX
+          ) {
+            p.historyYear = HISTORY_YEAR_MAX;
+          }
+        }
         // v13 → v14: extend Biosphere panel with taxon filter for
         // species + Natura 2000 + ESA WorldCover layer toggles.
         if (version < 14) {
