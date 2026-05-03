@@ -243,7 +243,7 @@ export function BiospherePanel(props: BiospherePanelProps) {
         opacity={props.naturaSitesOpacity}
         onToggle={props.onNaturaSitesOnChange}
         onOpacityChange={props.onNaturaSitesOpacityChange}
-        caption="Natura 2000 (FFH-Gebiete + Vogelschutzgebiete) · EEA · Europe-wide"
+        caption="Natura 2000 (FFH + Vogelschutzgebiete) · EEA · Europe-wide. Zoom in for individual sites — at low zoom polygons merge visually."
         status={
           !props.naturaSitesOn
             ? null

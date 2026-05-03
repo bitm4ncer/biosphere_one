@@ -127,7 +127,7 @@ export const useSettings = create<Settings>()(
       no2On: false,
       no2Opacity: 0.55,
       naturaSitesOn: false,
-      naturaSitesOpacity: 0.6,
+      naturaSitesOpacity: 0.4,
       landCoverOn: false,
       landCoverOpacity: 0.55,
       historyTimeTravelOn: false,

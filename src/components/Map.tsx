@@ -1580,12 +1580,14 @@ interface NaturaSource {
   label: string;
 }
 const NATURA_SOURCE_CANDIDATES: NaturaSource[] = [
-  // ArcGIS WMS sublayers exposed by EEA: 0 SCI/SAC (FFH), 1 SPA, often
-  // also a combined "1,0" view. Order matters — the first that returns
-  // 200 wins.
-  { layers: "1,0", label: "FFH + Vogelschutz (SCI + SPA)" },
+  // ArcGIS WMS sublayers exposed by EEA. Single-sublayer queries
+  // first because the combined "1,0" returns one set of polygons
+  // stacked over another, doubling the effective fill density and
+  // making everything look like a blob at low zoom. A single
+  // sublayer ("0" = SCI/SAC, "1" = SPA) renders cleaner per polygon.
   { layers: "0", label: "FFH-Gebiete (SCI / SAC)" },
   { layers: "1", label: "Vogelschutzgebiete (SPA)" },
+  { layers: "1,0", label: "FFH + Vogelschutz (SCI + SPA, combined)" },
 ];
 let naturaProbed: NaturaSource | null = null;
 let naturaProbeInFlight: Promise<NaturaSource | null> | null = null;
