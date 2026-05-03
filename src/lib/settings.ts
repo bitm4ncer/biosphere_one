@@ -63,9 +63,9 @@ export interface Settings {
   /** History panel — historic landmarks (OSM `historic=*` + Wikidata). */
   historyLandmarksOn: boolean;
   historyLandmarksOpacity: number;
-  /** History panel — OpenHistoricalMap raster overlay. */
+  /** History panel — when on, swaps the basemap to OHM's "historical"
+   * style for the chosen year. Replaces the user's normal basemap. */
   historyMapOn: boolean;
-  historyMapOpacity: number;
   /** Currently selected year on the History timeline (1500..currentYear). */
   historyYear: number;
   setImageBasemapId: (id: string) => void;
@@ -96,7 +96,6 @@ export interface Settings {
   setHistoryLandmarksOn: (on: boolean) => void;
   setHistoryLandmarksOpacity: (o: number) => void;
   setHistoryMapOn: (on: boolean) => void;
-  setHistoryMapOpacity: (o: number) => void;
   setHistoryYear: (year: number) => void;
 }
 
@@ -134,7 +133,6 @@ export const useSettings = create<Settings>()(
       historyLandmarksOn: true,
       historyLandmarksOpacity: 0.9,
       historyMapOn: true,
-      historyMapOpacity: 0.7,
       historyYear: HISTORY_YEAR_MAX,
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
       setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
@@ -169,7 +167,6 @@ export const useSettings = create<Settings>()(
       setHistoryLandmarksOpacity: (o) =>
         set({ historyLandmarksOpacity: clamp01(o) }),
       setHistoryMapOn: (on) => set({ historyMapOn: on }),
-      setHistoryMapOpacity: (o) => set({ historyMapOpacity: clamp01(o) }),
       setHistoryYear: (year) =>
         set({
           historyYear: Math.max(
@@ -180,7 +177,7 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 16,
+      version: 17,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -211,12 +208,20 @@ export const useSettings = create<Settings>()(
         historyLandmarksOn: state.historyLandmarksOn,
         historyLandmarksOpacity: state.historyLandmarksOpacity,
         historyMapOn: state.historyMapOn,
-        historyMapOpacity: state.historyMapOpacity,
         historyYear: state.historyYear,
       }),
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v16 → v17: drop `historyMapOpacity`. The historical map is no
+        // longer an overlay (which had an opacity slider) — it's now a
+        // basemap swap, where opacity is meaningless. Existing values
+        // would be silently ignored, but we delete them to keep
+        // localStorage tidy and prevent stale data from surfacing if we
+        // ever reintroduce an opacity field with the same name.
+        if (version < 17) {
+          delete p.historyMapOpacity;
+        }
         // v15 → v16: split the History panel into a master "Time Travel"
         // toggle + per-layer toggles (Map / Landmarks). Existing users
         // who had landmarks on now keep that, but Time Travel itself is
@@ -226,7 +231,6 @@ export const useSettings = create<Settings>()(
           if (typeof p.historyTimeTravelOn !== "boolean")
             p.historyTimeTravelOn = false;
           if (typeof p.historyMapOn !== "boolean") p.historyMapOn = true;
-          if (typeof p.historyMapOpacity !== "number") p.historyMapOpacity = 0.7;
         }
         // v14 → v15: add History panel — landmarks toggle + opacity +
         // selected year. Without numeric defaults the slider crashes on

@@ -15,11 +15,9 @@ interface HistoryPanelProps {
   visibleCount: number;
   loading: boolean;
 
-  // Historical map (OpenHistoricalMap raster overlay)
+  // Time-travel basemap (OHM "historical" style replaces the basemap)
   mapOn: boolean;
-  mapOpacity: number;
   onMapOnChange: (on: boolean) => void;
-  onMapOpacityChange: (o: number) => void;
 
   // Landmarks layer (OSM historic + Wikidata)
   landmarksOn: boolean;
@@ -31,37 +29,24 @@ interface HistoryPanelProps {
 export function HistoryPanel(props: HistoryPanelProps) {
   return (
     <div className="flex flex-col gap-3">
+      {/* Master switch — large pill so it reads as the primary control. */}
       <HudPanel label="Time Travel">
         <div className="flex flex-col gap-2">
-          <div
-            className="hud-tab-row"
-            style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
-            role="tablist"
-            aria-label="Time Travel mode"
+          <button
+            type="button"
+            role="switch"
+            aria-checked={props.timeTravelOn}
+            onClick={() => props.onTimeTravelOnChange(!props.timeTravelOn)}
+            className="hud-tab w-full"
+            data-active={props.timeTravelOn}
+            style={{ padding: "10px 14px", fontSize: 13, letterSpacing: "0.04em" }}
           >
-            <button
-              type="button"
-              className="hud-tab"
-              data-active={!props.timeTravelOn}
-              aria-pressed={!props.timeTravelOn}
-              onClick={() => props.onTimeTravelOnChange(false)}
-            >
-              Off
-            </button>
-            <button
-              type="button"
-              className="hud-tab"
-              data-active={props.timeTravelOn}
-              aria-pressed={props.timeTravelOn}
-              onClick={() => props.onTimeTravelOnChange(true)}
-            >
-              On
-            </button>
-          </div>
+            {props.timeTravelOn ? "ON" : "OFF"}
+          </button>
           <p className="text-[10px] leading-snug text-[color:var(--hud-text-muted)]">
-            Master switch for the History view. Toggle on to activate the
-            timeline slider, the historical-map overlay, and date-filtered
-            landmarks. Off restores the normal map.
+            Master switch. When on, the basemap can be swapped for a
+            historical map and landmark dots get filtered by the year you
+            choose. Off restores the normal map.
           </p>
         </div>
       </HudPanel>
@@ -85,13 +70,13 @@ export function HistoryPanel(props: HistoryPanelProps) {
             </div>
           </HudPanel>
 
-          <HudPanel label="Historical Map">
+          <HudPanel label="Time-Travel Basemap">
             <div className="flex flex-col gap-2">
               <div
                 className="hud-tab-row"
                 style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
                 role="tablist"
-                aria-label="Historical Map on/off"
+                aria-label="Time-Travel Basemap on/off"
               >
                 <button
                   type="button"
@@ -113,36 +98,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
                 </button>
               </div>
 
-              {props.mapOn && (
-                <div className="flex items-center gap-2">
-                  <span className="hud-label text-[9px]">Opacity</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={props.mapOpacity}
-                    onChange={(e) =>
-                      props.onMapOpacityChange(Number(e.target.value))
-                    }
-                    className="hud-slider flex-1"
-                    style={{
-                      ["--hud-fill" as string]: `${Math.round(
-                        props.mapOpacity * 100,
-                      )}%`,
-                    }}
-                    aria-label="Historical Map opacity"
-                  />
-                  <span className="hud-mono w-8 text-right text-[10px] text-[color:var(--hud-text-muted)]">
-                    {Math.round(props.mapOpacity * 100)}%
-                  </span>
-                </div>
-              )}
-
               <p className="text-[10px] leading-snug text-[color:var(--hud-text-muted)]">
-                OpenHistoricalMap: community-mapped historical roads,
-                fortifications, and settlements as a sepia overlay. Year
-                filtering on this layer requires vector tiles (Phase 2).
+                Replaces the basemap with OpenHistoricalMap&apos;s
+                sepia-toned historical style for the chosen year. Shows
+                period-aware borders, places, roads and water bodies as
+                community-mapped on OHM. Off restores your normal basemap.
               </p>
             </div>
           </HudPanel>

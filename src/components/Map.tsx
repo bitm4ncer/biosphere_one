@@ -55,6 +55,12 @@ import {
   fetchWikipediaSummary,
   type WikipediaSummary,
 } from "@/lib/history/wikipedia";
+import {
+  OHM_ATTRIBUTION,
+  OHM_HISTORICAL_BASEMAP_ID,
+  OHM_HISTORICAL_STYLE_URL,
+  applyOhmDate,
+} from "@/lib/history/basemap";
 import { useHikingLayers } from "./hiking/useHikingLayers";
 
 // Live precipitation (NASA GPM IMERG). Frames are 30-min apart with
@@ -584,256 +590,28 @@ function removeRailStationsLayer(map: MLMap) {
     map.removeSource(RAIL_STATIONS_SOURCE_ID);
 }
 
-// ── History · OpenHistoricalMap vector overlay ────────────────────────
+// ── History · OpenHistoricalMap basemap swap ──────────────────────────
 //
-// OHM is a Wikipedia-for-historical-cartography project: contributors
-// digitise old maps and tag features with `start_date` / `end_date`
-// (or the decimal-year variants `start_decdate` / `end_decdate`). They
-// publish vector tiles that include those temporal attributes — no
-// raster equivalent exists, so the only way to get a year-aware
-// historical map client-side is to pull the vector tiles and filter
-// each layer by date with MapLibre expressions.
+// "Time-Travel" replaces the entire MapLibre style with OHM's official
+// `historical` style (sepia/parchment, period-aware borders, places,
+// roads, water). The slider year is then applied via the upstream
+// `@openhistoricalmap/maplibre-gl-dates` plugin (see lib/history/basemap.ts).
 //
-// We add a small set of OHM source-layers as a sepia overlay on top
-// of the regular basemap — buildings, transport lines, water, land
-// use, place areas. Each layer carries a date filter that hides
-// features whose lifespan doesn't include the slider year.
-const HISTORY_MAP_SOURCE_ID = "history-map-src";
-const HISTORY_MAP_TILE_URL =
-  "https://vtiles.openhistoricalmap.org/maps/osm/{z}/{x}/{y}.pbf";
-const HISTORY_MAP_ATTRIBUTION =
-  '<a href="https://www.openhistoricalmap.org/" target="_blank" rel="noreferrer">OpenHistoricalMap</a> contributors';
-
-interface HistoryMapLayerSpec {
-  id: string;
-  sourceLayer: string;
-  layer: maplibregl.LayerSpecification;
-}
-
-function buildHistoryMapDateFilter(
-  year: number,
-): maplibregl.FilterSpecification {
-  // A feature is visible iff its lifespan includes the target year.
-  // OHM's schema uses decimal years (`start_decdate` / `end_decdate`)
-  // for filterable temporal data; missing fields = "always existed"
-  // (start) or "still extant" (end). Without `coalesce` MapLibre
-  // would drop features lacking either attribute.
-  return [
-    "all",
-    ["<=", ["coalesce", ["get", "start_decdate"], 0], year],
-    [">=", ["coalesce", ["get", "end_decdate"], 9999], year],
-  ] as maplibregl.FilterSpecification;
-}
-
-function historyMapLayerSpecs(opacity: number): HistoryMapLayerSpec[] {
-  // Sepia / parchment palette tuned to read clearly over the dark
-  // HUD basemap. Opacity is multiplied with the master alpha later.
-  const fillAlpha = 0.55 * opacity;
-  const lineAlpha = 0.85 * opacity;
-  const labelAlpha = 0.95 * opacity;
-  return [
-    {
-      id: "ohm-water-areas",
-      sourceLayer: "water_areas",
-      layer: {
-        id: "ohm-water-areas",
-        type: "fill",
-        source: HISTORY_MAP_SOURCE_ID,
-        "source-layer": "water_areas",
-        paint: {
-          "fill-color": "#3b5470",
-          "fill-opacity": fillAlpha,
-        },
-      },
-    },
-    {
-      id: "ohm-landuse-areas",
-      sourceLayer: "landuse_areas",
-      layer: {
-        id: "ohm-landuse-areas",
-        type: "fill",
-        source: HISTORY_MAP_SOURCE_ID,
-        "source-layer": "landuse_areas",
-        paint: {
-          "fill-color": "#5a4a32",
-          "fill-opacity": fillAlpha * 0.6,
-        },
-      },
-    },
-    {
-      id: "ohm-place-areas",
-      sourceLayer: "place_areas",
-      layer: {
-        id: "ohm-place-areas",
-        type: "fill",
-        source: HISTORY_MAP_SOURCE_ID,
-        "source-layer": "place_areas",
-        paint: {
-          "fill-color": "#6b563b",
-          "fill-opacity": fillAlpha * 0.4,
-          "fill-outline-color": "#c89968",
-        },
-      },
-    },
-    {
-      id: "ohm-buildings",
-      sourceLayer: "buildings",
-      layer: {
-        id: "ohm-buildings",
-        type: "fill",
-        source: HISTORY_MAP_SOURCE_ID,
-        "source-layer": "buildings",
-        minzoom: 12,
-        paint: {
-          "fill-color": "#c89968",
-          "fill-opacity": fillAlpha,
-          "fill-outline-color": "#8a6840",
-        },
-      },
-    },
-    {
-      id: "ohm-water-lines",
-      sourceLayer: "water_lines",
-      layer: {
-        id: "ohm-water-lines",
-        type: "line",
-        source: HISTORY_MAP_SOURCE_ID,
-        "source-layer": "water_lines",
-        paint: {
-          "line-color": "#3b5470",
-          "line-width": [
-            "interpolate", ["linear"], ["zoom"],
-            8, 0.4,
-            14, 1.2,
-          ],
-          "line-opacity": lineAlpha,
-        },
-      },
-    },
-    {
-      id: "ohm-transport-lines",
-      sourceLayer: "transport_lines",
-      layer: {
-        id: "ohm-transport-lines",
-        type: "line",
-        source: HISTORY_MAP_SOURCE_ID,
-        "source-layer": "transport_lines",
-        paint: {
-          "line-color": "#d8b894",
-          "line-width": [
-            "interpolate", ["linear"], ["zoom"],
-            8, 0.3,
-            12, 0.8,
-            16, 1.6,
-          ],
-          "line-opacity": lineAlpha * 0.85,
-        },
-      },
-    },
-    {
-      id: "ohm-place-labels",
-      sourceLayer: "place_areas",
-      layer: {
-        id: "ohm-place-labels",
-        type: "symbol",
-        source: HISTORY_MAP_SOURCE_ID,
-        "source-layer": "place_areas",
-        minzoom: 6,
-        layout: {
-          "text-field": ["get", "name"],
-          "text-font": ["Noto Sans Regular"],
-          "text-size": [
-            "interpolate", ["linear"], ["zoom"],
-            6, 9,
-            12, 12,
-          ],
-          "text-anchor": "center",
-          "text-allow-overlap": false,
-          "text-padding": 6,
-        },
-        paint: {
-          "text-color": "#e8c89a",
-          "text-halo-color": "#1a0f06",
-          "text-halo-width": 1.4,
-          "text-opacity": labelAlpha,
-        },
-      },
-    },
-  ];
-}
-
-const HISTORY_MAP_LAYER_IDS = historyMapLayerSpecs(1).map((s) => s.id);
-
-function ensureHistoryMapLayer(map: MLMap, opacity: number, year: number) {
-  if (!map.getSource(HISTORY_MAP_SOURCE_ID)) {
-    map.addSource(HISTORY_MAP_SOURCE_ID, {
-      type: "vector",
-      tiles: [HISTORY_MAP_TILE_URL],
-      minzoom: 0,
-      maxzoom: 14,
-      attribution: HISTORY_MAP_ATTRIBUTION,
-    });
-  }
-  // OHM has to sit BELOW the landmark markers — otherwise the sepia
-  // fills cover the dots and clicks land on OHM features instead of
-  // the actual landmarks.
-  const beforeId = firstExistingLayerId(map, [
-    HISTORY_LANDMARKS_HIT_LAYER_ID,
-    HISTORY_LANDMARKS_DOT_LAYER_ID,
-    HISTORY_LANDMARKS_LABEL_LAYER_ID,
-  ]);
-  const dateFilter = buildHistoryMapDateFilter(year);
-  for (const spec of historyMapLayerSpecs(opacity)) {
-    if (map.getLayer(spec.id)) continue;
-    map.addLayer(spec.layer, beforeId);
-    map.setFilter(spec.id, dateFilter);
-  }
-}
-
-function applyHistoryMapYear(map: MLMap, year: number) {
-  const dateFilter = buildHistoryMapDateFilter(year);
-  for (const id of HISTORY_MAP_LAYER_IDS) {
-    if (map.getLayer(id)) map.setFilter(id, dateFilter);
-  }
-}
-
-function updateHistoryMapOpacity(map: MLMap, opacity: number) {
-  // Re-derive the per-layer alpha values from the master opacity.
-  const fillAlpha = 0.55 * opacity;
-  const lineAlpha = 0.85 * opacity;
-  const labelAlpha = 0.95 * opacity;
-  const setFill = (id: string, alpha: number) => {
-    if (map.getLayer(id)) map.setPaintProperty(id, "fill-opacity", alpha);
-  };
-  const setLine = (id: string, alpha: number) => {
-    if (map.getLayer(id)) map.setPaintProperty(id, "line-opacity", alpha);
-  };
-  const setText = (id: string, alpha: number) => {
-    if (map.getLayer(id)) map.setPaintProperty(id, "text-opacity", alpha);
-  };
-  setFill("ohm-water-areas", fillAlpha);
-  setFill("ohm-landuse-areas", fillAlpha * 0.6);
-  setFill("ohm-place-areas", fillAlpha * 0.4);
-  setFill("ohm-buildings", fillAlpha);
-  setLine("ohm-water-lines", lineAlpha);
-  setLine("ohm-transport-lines", lineAlpha * 0.85);
-  setText("ohm-place-labels", labelAlpha);
-}
-
-function removeHistoryMapLayer(map: MLMap) {
-  for (const id of HISTORY_MAP_LAYER_IDS) {
-    if (map.getLayer(id)) map.removeLayer(id);
-  }
-  if (map.getSource(HISTORY_MAP_SOURCE_ID))
-    map.removeSource(HISTORY_MAP_SOURCE_ID);
-}
+// We previously hand-rolled a vector overlay against guessed source-
+// layer names — those names didn't match OHM's schema and almost
+// nothing rendered. Swapping the basemap delegates all of that to the
+// upstream-maintained style.
 
 // ── History · historic landmarks ──────────────────────────────────────
 const HISTORY_LANDMARKS_SOURCE_ID = "history-landmarks-src";
 const HISTORY_LANDMARKS_HIT_LAYER_ID = "history-landmarks-hit";
 const HISTORY_LANDMARKS_DOT_LAYER_ID = "history-landmarks-dot";
 const HISTORY_LANDMARKS_LABEL_LAYER_ID = "history-landmarks-label";
-const HISTORY_LANDMARKS_MIN_ZOOM = 6;
+// Landmarks now appear from country scale on. Castles + capitals are
+// useful at z=4-5; we previously gated them at z=6 which made the
+// History tab look empty whenever the user opened it on a continent
+// view.
+const HISTORY_LANDMARKS_MIN_ZOOM = 4;
 const HISTORY_UNDATED_VISIBLE_FROM = 2000;
 
 function ensureHistoryLandmarksLayer(map: MLMap, opacity: number) {
@@ -1927,7 +1705,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     historyLandmarksOn,
     historyLandmarksOpacity,
     historyMapOn,
-    historyMapOpacity,
     historyYear,
     setImageBasemapId,
     setVectorBasemapId,
@@ -1956,19 +1733,24 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     setHistoryLandmarksOn,
     setHistoryLandmarksOpacity,
     setHistoryMapOn,
-    setHistoryMapOpacity,
     setHistoryYear,
   } = useSettings();
-  const active =
+  const baseActive =
     basemapMode === "vector" ? vectorBasemapId : imageBasemapId;
+  // Per-layer history toggles only take effect when Time Travel is on.
+  const historyLandmarksActive = historyTimeTravelOn && historyLandmarksOn;
+  const historyMapActive = historyTimeTravelOn && historyMapOn;
+  // When Time Travel + the historical basemap are on, the OHM style
+  // replaces the user's chosen basemap. We thread this through the
+  // existing basemap-swap pipeline by reporting OHM as the active id
+  // — every overlay-reapply path (weather, fires, hiking, landmarks…)
+  // already keys off `active` via style.load handlers.
+  const active = historyMapActive ? OHM_HISTORICAL_BASEMAP_ID : baseActive;
   const activeVariantId = basemapVariants[active];
   const weatherOn = activeOverlay === "clouds";
   const railwayOn = activeOverlay === "rail";
   const firesOn = activeOverlay === "fires";
   const ndviOn = activeOverlay === "ndvi";
-  // Per-layer history toggles only take effect when Time Travel is on.
-  const historyLandmarksActive = historyTimeTravelOn && historyLandmarksOn;
-  const historyMapActive = historyTimeTravelOn && historyMapOn;
   const [view, setView] = useState<ViewState>({
     center: [6.775, 51.2277],
     zoom: 12,
@@ -2105,19 +1887,29 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const initial = BASEMAPS.find((b) => b.id === active) ?? BASEMAPS[0];
-    const initialVariantId = basemapVariants[initial.id];
-    const initialOffset = initial.id === "gibs-today" ? liveBasemapDayOffset : 0;
+    // If the user persisted the History panel into Time-Travel mode,
+    // mount directly into the OHM style so we don't briefly render the
+    // regular basemap before swapping.
+    const startsInTimeTravel = active === OHM_HISTORICAL_BASEMAP_ID;
+    const initial = startsInTimeTravel
+      ? null
+      : BASEMAPS.find((b) => b.id === active) ?? BASEMAPS[0];
+    const initialVariantId = initial ? basemapVariants[initial.id] : undefined;
+    const initialOffset =
+      initial?.id === "gibs-today" ? liveBasemapDayOffset : 0;
     // Seed the ref so the post-mount basemap-apply effect skips the
     // redundant setStyle that would otherwise wipe pending overlay
     // registrations.
-    lastAppliedBasemapKeyRef.current = `${initial.id}|${initialVariantId ?? ""}|${initialOffset}`;
+    lastAppliedBasemapKeyRef.current = startsInTimeTravel
+      ? `${OHM_HISTORICAL_BASEMAP_ID}||0`
+      : `${initial!.id}|${initialVariantId ?? ""}|${initialOffset}`;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style:
-        initial.kind === "raster"
-          ? rasterStyle(initial, initialVariantId, initialOffset)
-          : initial.url,
+      style: startsInTimeTravel
+        ? OHM_HISTORICAL_STYLE_URL
+        : initial!.kind === "raster"
+          ? rasterStyle(initial!, initialVariantId, initialOffset)
+          : initial!.url,
       center: view.center,
       zoom: view.zoom,
       minZoom: 2,
@@ -2130,7 +1922,10 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     });
     mapRef.current = map;
     setMapInstance(map);
-    map.once("load", () => map.setProjection({ type: projection }));
+    map.once("load", () => {
+      map.setProjection({ type: projection });
+      if (startsInTimeTravel) applyOhmDate(map, historyYear);
+    });
 
     map.addControl(new ScaleControl({ maxWidth: 120, unit: "metric" }), "bottom-left");
     map.addControl(
@@ -2330,14 +2125,33 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    const basemap = BASEMAPS.find((b) => b.id === active);
-    if (!basemap) return;
     // dayOffset only matters for the gibs-today basemap; treat it as 0
     // for everything else so an unrelated slider drag doesn't restyle
     // the rendered basemap and wipe overlays.
     const effectiveOffset = active === "gibs-today" ? liveBasemapDayOffset : 0;
     const key = `${active}|${activeVariantId ?? ""}|${effectiveOffset}`;
     if (lastAppliedBasemapKeyRef.current === key) return;
+
+    if (active === OHM_HISTORICAL_BASEMAP_ID) {
+      // Time-Travel basemap: swap to OHM's official "historical" style
+      // by URL. The hybrid-labels overlay would clash with OHM's own
+      // labels, so we deliberately skip it on this branch.
+      lastAppliedBasemapKeyRef.current = key;
+      map.setStyle(OHM_HISTORICAL_STYLE_URL);
+      const reapply = () => {
+        map.setProjection({ type: projection });
+        if (sector) setSectorOutline(map, sector);
+        if (overlayUrl && sector)
+          setOverlay(map, overlayUrl, sector, overlayOpacity);
+        applyOhmDate(map, historyYear);
+      };
+      if (map.isStyleLoaded()) setTimeout(reapply, 0);
+      else map.once("load", reapply);
+      return;
+    }
+
+    const basemap = BASEMAPS.find((b) => b.id === active);
+    if (!basemap) return;
     lastAppliedBasemapKeyRef.current = key;
     applyBasemap(map, basemap, activeVariantId, effectiveOffset);
 
@@ -3329,42 +3143,23 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     applyHistoryLandmarksOpacity(map, historyLandmarksOpacity);
   }, [historyLandmarksActive, historyLandmarksOpacity]);
 
-  // ── History · OpenHistoricalMap vector overlay ───────────────────
-  useEffect(() => {
-    if (!historyMapActive) {
-      const map = mapRef.current;
-      if (map) removeHistoryMapLayer(map);
-    }
-  }, [historyMapActive]);
-
+  // ── History · OHM date filter ────────────────────────────────────
+  // The basemap swap to OHM is handled by the main basemap-apply
+  // effect (it inspects `active === OHM_HISTORICAL_BASEMAP_ID`). All
+  // we have to do here is keep the slider year in sync with whatever
+  // OHM style is currently loaded — both on style reload (e.g. user
+  // switches between OHM and a regular basemap) and on year drag.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !historyMapActive) return;
-    const apply = () => {
-      ensureHistoryMapLayer(map, historyMapOpacity, historyYear);
-    };
+    const apply = () => applyOhmDate(map, historyYear);
     if (map.isStyleLoaded()) apply();
-    else map.once("style.load", apply);
-    map.on("style.load", apply);
+    else map.once("styledata", apply);
+    map.on("styledata", apply);
     return () => {
-      map.off("style.load", apply);
+      map.off("styledata", apply);
     };
-    // Re-apply when the basemap changes (style reload removes overlays).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyMapActive, active]);
-
-  // Slider drag → just `setFilter` on every OHM layer. Cheap.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !historyMapActive) return;
-    applyHistoryMapYear(map, historyYear);
   }, [historyMapActive, historyYear]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !historyMapActive) return;
-    updateHistoryMapOpacity(map, historyMapOpacity);
-  }, [historyMapActive, historyMapOpacity]);
 
   // ── Biosphere · NO₂ (NASA OMI / Sentinel-5P) ──────────────────────
   useEffect(() => {
@@ -4071,9 +3866,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                 visibleCount={historyVisibleCount}
                 loading={historyLoading}
                 mapOn={historyMapOn}
-                mapOpacity={historyMapOpacity}
                 onMapOnChange={setHistoryMapOn}
-                onMapOpacityChange={setHistoryMapOpacity}
                 landmarksOn={historyLandmarksOn}
                 landmarksOpacity={historyLandmarksOpacity}
                 onLandmarksOnChange={setHistoryLandmarksOn}
