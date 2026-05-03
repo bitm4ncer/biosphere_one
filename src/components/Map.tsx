@@ -711,25 +711,36 @@ function setHistoryLandmarksData(map: MLMap, data: LandmarkCollection) {
  * "current view" rather than mis-positioning at year 1500.
  */
 function buildHistoryLandmarksFilter(year: number): maplibregl.FilterSpecification {
+  // Pure-expression form. The previous shape mixed `["!", ["has", ...]]`
+  // alongside `[">=", ["get", ...], year]` inside an `["any", ...]`,
+  // and MapLibre's filter validator misparsed the inner `>=` as the
+  // legacy `[">=", "property", value]` syntax — throwing
+  //   `filter[2][2][1]: string expected, array found`
+  // at setFilter, which aborted the very same `apply()` that triggered
+  // the data fetch, so no markers ever loaded.
+  //
+  // Using `coalesce` to default missing dates lets us write a flat
+  // sequence of comparisons that the validator never confuses for the
+  // legacy syntax.
+  const undatedVisible = year >= HISTORY_UNDATED_VISIBLE_FROM;
   return [
     "all",
+    // Inception: visible if (a) we have one and it's <= year, or
+    // (b) we don't have one and the slider is in the "undated heritage
+    // sites" window (year >= 2000).
     [
-      "any",
-      [
-        "all",
-        ["has", "inception"],
-        ["<=", ["get", "inception"], year],
-      ],
-      [
-        "all",
-        ["!", ["has", "inception"]],
-        [">=", year, HISTORY_UNDATED_VISIBLE_FROM],
-      ],
+      "case",
+      ["has", "inception"],
+      ["<=", ["to-number", ["get", "inception"]], year],
+      undatedVisible,
     ],
+    // Dissolved: visible if there is no end-year, or there is one and
+    // it's still after the slider year. `coalesce` substitutes a far-
+    // future sentinel for missing values so the comparison passes.
     [
-      "any",
-      ["!", ["has", "dissolved"]],
-      [">=", ["get", "dissolved"], year],
+      ">=",
+      ["to-number", ["coalesce", ["get", "dissolved"], 9999]],
+      year,
     ],
   ] as maplibregl.FilterSpecification;
 }
@@ -3042,8 +3053,18 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     };
 
     const apply = () => {
-      ensureHistoryLandmarksLayer(map, historyLandmarksOpacity);
-      applyHistoryLandmarksFilter(map, historyYear);
+      try {
+        ensureHistoryLandmarksLayer(map, historyLandmarksOpacity);
+      } catch (err) {
+        console.warn("[history-landmarks] addLayer failed", err);
+      }
+      try {
+        applyHistoryLandmarksFilter(map, historyYear);
+      } catch (err) {
+        // Filter is best-effort — if the spec rejects it we still want
+        // the dots to render unfiltered rather than vanishing entirely.
+        console.warn("[history-landmarks] setFilter failed", err);
+      }
       refresh();
     };
 
