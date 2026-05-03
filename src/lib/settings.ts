@@ -57,9 +57,15 @@ export interface Settings {
   /** ESA WorldCover 10m global land cover. */
   landCoverOn: boolean;
   landCoverOpacity: number;
+  /** History panel — master "Time Travel" toggle. Gates the slider's
+   * effect on landmarks + activates the historical-map overlay. */
+  historyTimeTravelOn: boolean;
   /** History panel — historic landmarks (OSM `historic=*` + Wikidata). */
   historyLandmarksOn: boolean;
   historyLandmarksOpacity: number;
+  /** History panel — OpenHistoricalMap raster overlay. */
+  historyMapOn: boolean;
+  historyMapOpacity: number;
   /** Currently selected year on the History timeline (1500..currentYear). */
   historyYear: number;
   setImageBasemapId: (id: string) => void;
@@ -86,8 +92,11 @@ export interface Settings {
   setNaturaSitesOpacity: (o: number) => void;
   setLandCoverOn: (on: boolean) => void;
   setLandCoverOpacity: (o: number) => void;
+  setHistoryTimeTravelOn: (on: boolean) => void;
   setHistoryLandmarksOn: (on: boolean) => void;
   setHistoryLandmarksOpacity: (o: number) => void;
+  setHistoryMapOn: (on: boolean) => void;
+  setHistoryMapOpacity: (o: number) => void;
   setHistoryYear: (year: number) => void;
 }
 
@@ -121,8 +130,11 @@ export const useSettings = create<Settings>()(
       naturaSitesOpacity: 0.6,
       landCoverOn: false,
       landCoverOpacity: 0.55,
-      historyLandmarksOn: false,
+      historyTimeTravelOn: false,
+      historyLandmarksOn: true,
       historyLandmarksOpacity: 0.9,
+      historyMapOn: true,
+      historyMapOpacity: 0.7,
       historyYear: HISTORY_YEAR_MAX,
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
       setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
@@ -152,9 +164,12 @@ export const useSettings = create<Settings>()(
       setNaturaSitesOpacity: (o) => set({ naturaSitesOpacity: clamp01(o) }),
       setLandCoverOn: (on) => set({ landCoverOn: on }),
       setLandCoverOpacity: (o) => set({ landCoverOpacity: clamp01(o) }),
+      setHistoryTimeTravelOn: (on) => set({ historyTimeTravelOn: on }),
       setHistoryLandmarksOn: (on) => set({ historyLandmarksOn: on }),
       setHistoryLandmarksOpacity: (o) =>
         set({ historyLandmarksOpacity: clamp01(o) }),
+      setHistoryMapOn: (on) => set({ historyMapOn: on }),
+      setHistoryMapOpacity: (o) => set({ historyMapOpacity: clamp01(o) }),
       setHistoryYear: (year) =>
         set({
           historyYear: Math.max(
@@ -165,7 +180,7 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 15,
+      version: 16,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -192,13 +207,27 @@ export const useSettings = create<Settings>()(
         naturaSitesOpacity: state.naturaSitesOpacity,
         landCoverOn: state.landCoverOn,
         landCoverOpacity: state.landCoverOpacity,
+        historyTimeTravelOn: state.historyTimeTravelOn,
         historyLandmarksOn: state.historyLandmarksOn,
         historyLandmarksOpacity: state.historyLandmarksOpacity,
+        historyMapOn: state.historyMapOn,
+        historyMapOpacity: state.historyMapOpacity,
         historyYear: state.historyYear,
       }),
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v15 → v16: split the History panel into a master "Time Travel"
+        // toggle + per-layer toggles (Map / Landmarks). Existing users
+        // who had landmarks on now keep that, but Time Travel itself is
+        // off by default (otherwise revisits would auto-activate the
+        // historical-map overlay, which they didn't opt into).
+        if (version < 16) {
+          if (typeof p.historyTimeTravelOn !== "boolean")
+            p.historyTimeTravelOn = false;
+          if (typeof p.historyMapOn !== "boolean") p.historyMapOn = true;
+          if (typeof p.historyMapOpacity !== "number") p.historyMapOpacity = 0.7;
+        }
         // v14 → v15: add History panel — landmarks toggle + opacity +
         // selected year. Without numeric defaults the slider crashes on
         // first render, so always backfill.

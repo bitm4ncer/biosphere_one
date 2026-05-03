@@ -16,23 +16,22 @@ const OVERPASS_ENDPOINTS = [
 
 const WIKIDATA_SPARQL = "https://query.wikidata.org/sparql";
 
-// Wikidata QIDs that should be treated as historic landmarks. Keeps
-// the SPARQL VALUES list focused so the bbox query stays under a
-// 60-second budget on the public endpoint.
-const WIKIDATA_KIND_QIDS = [
-  "Q23413", // castle
-  "Q839954", // archaeological site
-  "Q4989906", // monument
-  "Q178561", // battle
-  "Q35112127", // historic site
-  "Q33506", // museum (often housed in historic buildings)
-  "Q570116", // tourist attraction
-  "Q12518", // tower
-  "Q16970", // church building
-  "Q44539", // temple
-  "Q3947", // house (manor / villa often historic)
-  "Q1497364", // ruins
-  "Q19844914", // memorial
+// Wikidata QIDs of "things that are not landmarks" — events, people,
+// administrative units. Used as a *negative* filter on the bbox query
+// to reduce noise without forcing items into a narrow whitelist
+// (`wdt:P31` direct match on a positive list missed most heritage
+// sites because OSM/Wikidata kinds are highly heterogeneous).
+const WIKIDATA_EXCLUDE_QIDS = [
+  "Q5", // human
+  "Q1656682", // event
+  "Q15275719", // recurrent event
+  "Q1190554", // occurrence
+  "Q3024240", // historical country (admin)
+  "Q56061", // administrative territorial entity
+  "Q515", // city
+  "Q3957", // town
+  "Q532", // village
+  "Q702492", // urban municipality
 ];
 
 export interface LandmarkProperties {
@@ -227,30 +226,49 @@ async function fetchWikidataLandmarks(
   signal?: AbortSignal,
 ): Promise<LandmarkFeature[]> {
   const [s, w, n, e] = bbox;
-  const valuesList = WIKIDATA_KIND_QIDS.map((q) => `wd:${q}`).join(" ");
+  // Force decimal formatting — integer-only WKT literals (e.g.
+  // "Point(6 51)") are silently rejected by the box service.
+  const fmt = (n: number) => n.toFixed(5);
+  const excludeList = WIKIDATA_EXCLUDE_QIDS.map((q) => `wd:${q}`).join(" ");
+  // All items in the bbox that have an inception date (P571) and are
+  // not in the exclusion list. Wikibase's box service does the spatial
+  // filter; the inception triple is what lets us place items on the
+  // timeline. Keeping the kind unfiltered turned out to be essential —
+  // OSM/Wikidata heritage classes are highly heterogeneous (Q23413
+  // castle, Q1149531 fort, Q57831 fortress, etc.) and a positive
+  // VALUES list silently skipped most of them.
   const query = `
     SELECT ?item ?itemLabel ?coord ?inception ?dissolved ?kind ?wpTitle WHERE {
       SERVICE wikibase:box {
         ?item wdt:P625 ?coord .
-        bd:serviceParam wikibase:cornerSouthWest "Point(${w} ${s})"^^geo:wktLiteral .
-        bd:serviceParam wikibase:cornerNorthEast "Point(${e} ${n})"^^geo:wktLiteral .
+        bd:serviceParam wikibase:cornerSouthWest "Point(${fmt(w)} ${fmt(s)})"^^geo:wktLiteral .
+        bd:serviceParam wikibase:cornerNorthEast "Point(${fmt(e)} ${fmt(n)})"^^geo:wktLiteral .
       }
       ?item wdt:P571 ?inception .
-      ?item wdt:P31 ?kind .
-      VALUES ?kind { ${valuesList} }
+      OPTIONAL { ?item wdt:P31 ?kind . }
       OPTIONAL { ?item wdt:P576 ?dissolved . }
       OPTIONAL {
         ?wpArticle schema:about ?item ;
                    schema:isPartOf <https://en.wikipedia.org/> ;
                    schema:name ?wpTitle .
       }
-      SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+      FILTER NOT EXISTS {
+        ?item wdt:P31 ?excluded .
+        VALUES ?excluded { ${excludeList} }
+      }
+      SERVICE wikibase:label { bd:serviceParam wikibase:language "en,de". }
     }
-    LIMIT 300
+    LIMIT 400
   `;
-  const url = `${WIKIDATA_SPARQL}?query=${encodeURIComponent(query)}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/sparql-results+json" },
+  // POST avoids the URL-length cliff (the QID VALUES list pushes us
+  // close to the 414 limit on some proxies).
+  const res = await fetch(WIKIDATA_SPARQL, {
+    method: "POST",
+    headers: {
+      Accept: "application/sparql-results+json",
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: `query=${encodeURIComponent(query)}`,
     signal,
   });
   if (!res.ok) {
@@ -462,7 +480,9 @@ export async function fetchLandmarksForBounds(
         }
       } catch (err) {
         if ((err as Error).name === "AbortError") throw err;
-        // Otherwise swallow — partial results are still useful.
+        // Surface load failures so users can see why a region is empty
+        // (rate limit, network, query syntax) rather than silent zeros.
+        console.warn(`[history-landmarks] tile ${t.x}/${t.y} failed`, err);
       }
     }
   }

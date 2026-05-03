@@ -584,6 +584,56 @@ function removeRailStationsLayer(map: MLMap) {
     map.removeSource(RAIL_STATIONS_SOURCE_ID);
 }
 
+// ── History · OpenHistoricalMap raster overlay ────────────────────────
+//
+// OHM is a Wikipedia-of-historical-cartography project: contributors
+// digitise old maps and add OSM-style historical features (with
+// `start_date` / `end_date` tags). Their `historical-osm` Carto style
+// renders the result as raster tiles. The renderer doesn't currently
+// honour a server-side `?date=` parameter — true date-aware filtering
+// happens via vector tiles + MapLibre style filters, which is too
+// heavy for an MVP. So we use the latest-state raster as a "historical
+// look" overlay; the year-aware filtering applies to the landmarks
+// layer below.
+const HISTORY_MAP_SOURCE_ID = "history-map-src";
+const HISTORY_MAP_LAYER_ID = "history-map-layer";
+const HISTORY_MAP_TILE_URL =
+  "https://tiles.openhistoricalmap.org/historical-osm/{z}/{x}/{y}.png";
+const HISTORY_MAP_ATTRIBUTION =
+  '<a href="https://www.openhistoricalmap.org/" target="_blank" rel="noreferrer">OpenHistoricalMap</a> contributors';
+
+function ensureHistoryMapLayer(map: MLMap, opacity: number) {
+  if (map.getLayer(HISTORY_MAP_LAYER_ID)) return;
+  if (map.getSource(HISTORY_MAP_SOURCE_ID))
+    map.removeSource(HISTORY_MAP_SOURCE_ID);
+  map.addSource(HISTORY_MAP_SOURCE_ID, {
+    type: "raster",
+    tiles: [HISTORY_MAP_TILE_URL],
+    tileSize: 256,
+    maxzoom: 18,
+    attribution: HISTORY_MAP_ATTRIBUTION,
+  });
+  map.addLayer({
+    id: HISTORY_MAP_LAYER_ID,
+    type: "raster",
+    source: HISTORY_MAP_SOURCE_ID,
+    paint: { "raster-opacity": opacity, "raster-fade-duration": 200 },
+  });
+}
+
+function updateHistoryMapOpacity(map: MLMap, opacity: number) {
+  if (map.getLayer(HISTORY_MAP_LAYER_ID)) {
+    map.setPaintProperty(HISTORY_MAP_LAYER_ID, "raster-opacity", opacity);
+  }
+}
+
+function removeHistoryMapLayer(map: MLMap) {
+  if (map.getLayer(HISTORY_MAP_LAYER_ID))
+    map.removeLayer(HISTORY_MAP_LAYER_ID);
+  if (map.getSource(HISTORY_MAP_SOURCE_ID))
+    map.removeSource(HISTORY_MAP_SOURCE_ID);
+}
+
 // ── History · historic landmarks ──────────────────────────────────────
 const HISTORY_LANDMARKS_SOURCE_ID = "history-landmarks-src";
 const HISTORY_LANDMARKS_HIT_LAYER_ID = "history-landmarks-hit";
@@ -1682,8 +1732,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     naturaSitesOpacity,
     landCoverOn,
     landCoverOpacity,
+    historyTimeTravelOn,
     historyLandmarksOn,
     historyLandmarksOpacity,
+    historyMapOn,
+    historyMapOpacity,
     historyYear,
     setImageBasemapId,
     setVectorBasemapId,
@@ -1708,8 +1761,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     setNaturaSitesOpacity,
     setLandCoverOn,
     setLandCoverOpacity,
+    setHistoryTimeTravelOn,
     setHistoryLandmarksOn,
     setHistoryLandmarksOpacity,
+    setHistoryMapOn,
+    setHistoryMapOpacity,
     setHistoryYear,
   } = useSettings();
   const active =
@@ -1719,6 +1775,9 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const railwayOn = activeOverlay === "rail";
   const firesOn = activeOverlay === "fires";
   const ndviOn = activeOverlay === "ndvi";
+  // Per-layer history toggles only take effect when Time Travel is on.
+  const historyLandmarksActive = historyTimeTravelOn && historyLandmarksOn;
+  const historyMapActive = historyTimeTravelOn && historyMapOn;
   const [view, setView] = useState<ViewState>({
     center: [6.775, 51.2277],
     zoom: 12,
@@ -2914,7 +2973,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   // ── History · landmarks ──────────────────────────────────────────
   // Toggle off → wipe everything: layer + cached visible state + popup.
   useEffect(() => {
-    if (!historyLandmarksOn) {
+    if (!historyLandmarksActive) {
       const map = mapRef.current;
       if (map) removeHistoryLandmarksLayer(map);
       historyPopupRef.current?.remove();
@@ -2922,14 +2981,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       setHistoryVisibleCount(0);
       setHistoryEarliestYear(null);
     }
-  }, [historyLandmarksOn]);
+  }, [historyLandmarksActive]);
 
   // Toggle on / pan / zoom → ensure layer, render cached features
   // immediately, fetch missing tiles in the background, click handler
   // for the Wikipedia popup.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !historyLandmarksOn) return;
+    if (!map || !historyLandmarksActive) return;
     let cancelled = false;
     let pendingFetch: AbortController | null = null;
 
@@ -3063,20 +3122,50 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       map.off("mouseleave", HISTORY_LANDMARKS_HIT_LAYER_ID, onLeave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyLandmarksOn, active]);
+  }, [historyLandmarksActive, active]);
 
   // Slider drag → no refetch, just `setFilter`. Cheap.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !historyLandmarksOn) return;
+    if (!map || !historyLandmarksActive) return;
     applyHistoryLandmarksFilter(map, historyYear);
-  }, [historyLandmarksOn, historyYear]);
+  }, [historyLandmarksActive, historyYear]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !historyLandmarksOn) return;
+    if (!map || !historyLandmarksActive) return;
     applyHistoryLandmarksOpacity(map, historyLandmarksOpacity);
-  }, [historyLandmarksOn, historyLandmarksOpacity]);
+  }, [historyLandmarksActive, historyLandmarksOpacity]);
+
+  // ── History · OpenHistoricalMap raster overlay ───────────────────
+  useEffect(() => {
+    if (!historyMapActive) {
+      const map = mapRef.current;
+      if (map) removeHistoryMapLayer(map);
+    }
+  }, [historyMapActive]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !historyMapActive) return;
+    const apply = () => {
+      ensureHistoryMapLayer(map, historyMapOpacity);
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("style.load", apply);
+    map.on("style.load", apply);
+    return () => {
+      map.off("style.load", apply);
+    };
+    // Re-apply when the basemap changes (style reload removes overlays).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyMapActive, active]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !historyMapActive) return;
+    updateHistoryMapOpacity(map, historyMapOpacity);
+  }, [historyMapActive, historyMapOpacity]);
 
   // ── Biosphere · NO₂ (NASA OMI / Sentinel-5P) ──────────────────────
   useEffect(() => {
@@ -3775,11 +3864,17 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               <HikingPanel mapRef={mapRef} />
             ) : activePane === "history" ? (
               <HistoryPanel
+                timeTravelOn={historyTimeTravelOn}
+                onTimeTravelOnChange={setHistoryTimeTravelOn}
                 year={historyYear}
                 onYearChange={setHistoryYear}
                 earliestVisibleYear={historyEarliestYear}
                 visibleCount={historyVisibleCount}
                 loading={historyLoading}
+                mapOn={historyMapOn}
+                mapOpacity={historyMapOpacity}
+                onMapOnChange={setHistoryMapOn}
+                onMapOpacityChange={setHistoryMapOpacity}
                 landmarksOn={historyLandmarksOn}
                 landmarksOpacity={historyLandmarksOpacity}
                 onLandmarksOnChange={setHistoryLandmarksOn}
