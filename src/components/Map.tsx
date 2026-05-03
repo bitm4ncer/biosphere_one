@@ -2616,7 +2616,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       ]);
       ensureSpeciesLayer(map, speciesOpacity, speciesTaxonKey, beforeId);
     };
-    if (map.isStyleLoaded()) apply();
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
     map.on("style.load", apply);
     return () => {
       map.off("style.load", apply);
@@ -2666,7 +2670,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       ]);
       ensureForestLossLayer(map, forestLossOpacity, slug, beforeId);
     };
-    if (map.isStyleLoaded()) apply();
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
     map.on("style.load", apply);
     return () => {
       map.off("style.load", apply);
@@ -2718,7 +2726,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       ]);
       ensureNo2Layer(map, no2Opacity, source, beforeId);
     };
-    if (map.isStyleLoaded()) apply();
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
     map.on("style.load", apply);
     return () => {
       map.off("style.load", apply);
@@ -2770,7 +2782,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       ]);
       ensureNaturaLayer(map, naturaSitesOpacity, source, beforeId);
     };
-    if (map.isStyleLoaded()) apply();
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
     map.on("style.load", apply);
     return () => {
       map.off("style.load", apply);
@@ -2808,7 +2824,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       ]);
       ensureLandCoverLayer(map, landCoverOpacity, beforeId);
     };
-    if (map.isStyleLoaded()) apply();
+    if (map.isStyleLoaded()) {
+      apply();
+    } else {
+      map.once("style.load", apply);
+    }
     map.on("style.load", apply);
     return () => {
       map.off("style.load", apply);

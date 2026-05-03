@@ -101,8 +101,13 @@ const FOREST_LOSS_LEGEND_FALLBACK: LegendSpec = {
 const NO2_GRADIENT =
   "linear-gradient(to right, #1e3a8a, #06b6d4, #fde047, #fb923c, #b91c1c)";
 
-const NATURA_GRADIENT =
-  "linear-gradient(to right, #4ade80, #16a34a, #14532d)";
+const NATURA_SWATCHES: SwatchSpec = {
+  swatches: [
+    { color: "#16a34a", label: "FFH (Habitats Directive)" },
+    { color: "#a855f7", label: "SPA (Birds Directive)" },
+  ],
+  unit: "EEA Natura 2000 · default WMS style",
+};
 
 // ESA WorldCover 2021 official class colours (subset — the most common
 // classes worldwide; a full 11-class palette would be too noisy in the
@@ -130,6 +135,17 @@ const LAND_COVER_SWATCHES: SwatchSpec = {
 export function BiospherePanel(props: BiospherePanelProps) {
   return (
     <div className="flex flex-col gap-3">
+      <BiosphereLayerCard
+        label="Land Cover"
+        on={props.landCoverOn}
+        opacity={props.landCoverOpacity}
+        onToggle={props.onLandCoverOnChange}
+        onOpacityChange={props.onLandCoverOpacityChange}
+        caption="ESA WorldCover 2021 · 10 m · global · 11 classes incl. cropland"
+        status={null}
+        swatches={LAND_COVER_SWATCHES}
+      />
+
       <BiosphereLayerCard
         label="Species"
         on={props.speciesOn}
@@ -237,23 +253,7 @@ export function BiospherePanel(props: BiospherePanelProps) {
                 ? props.naturaResolvedLabel
                 : "no WMS sublayer responded"
         }
-        legend={{
-          gradient: NATURA_GRADIENT,
-          minLabel: "site outline",
-          maxLabel: "core area",
-          unit: "EU Habitats + Birds Directives",
-        }}
-      />
-
-      <BiosphereLayerCard
-        label="Land Cover"
-        on={props.landCoverOn}
-        opacity={props.landCoverOpacity}
-        onToggle={props.onLandCoverOnChange}
-        onOpacityChange={props.onLandCoverOpacityChange}
-        caption="ESA WorldCover 2021 · 10 m · global · 11 classes incl. cropland"
-        status={null}
-        swatches={LAND_COVER_SWATCHES}
+        swatches={NATURA_SWATCHES}
       />
     </div>
   );
