@@ -584,52 +584,238 @@ function removeRailStationsLayer(map: MLMap) {
     map.removeSource(RAIL_STATIONS_SOURCE_ID);
 }
 
-// ── History · OpenHistoricalMap raster overlay ────────────────────────
+// ── History · OpenHistoricalMap vector overlay ────────────────────────
 //
-// OHM is a Wikipedia-of-historical-cartography project: contributors
-// digitise old maps and add OSM-style historical features (with
-// `start_date` / `end_date` tags). Their `historical-osm` Carto style
-// renders the result as raster tiles. The renderer doesn't currently
-// honour a server-side `?date=` parameter — true date-aware filtering
-// happens via vector tiles + MapLibre style filters, which is too
-// heavy for an MVP. So we use the latest-state raster as a "historical
-// look" overlay; the year-aware filtering applies to the landmarks
-// layer below.
+// OHM is a Wikipedia-for-historical-cartography project: contributors
+// digitise old maps and tag features with `start_date` / `end_date`
+// (or the decimal-year variants `start_decdate` / `end_decdate`). They
+// publish vector tiles that include those temporal attributes — no
+// raster equivalent exists, so the only way to get a year-aware
+// historical map client-side is to pull the vector tiles and filter
+// each layer by date with MapLibre expressions.
+//
+// We add a small set of OHM source-layers as a sepia overlay on top
+// of the regular basemap — buildings, transport lines, water, land
+// use, place areas. Each layer carries a date filter that hides
+// features whose lifespan doesn't include the slider year.
 const HISTORY_MAP_SOURCE_ID = "history-map-src";
-const HISTORY_MAP_LAYER_ID = "history-map-layer";
 const HISTORY_MAP_TILE_URL =
-  "https://tiles.openhistoricalmap.org/historical-osm/{z}/{x}/{y}.png";
+  "https://vtiles.openhistoricalmap.org/maps/osm/{z}/{x}/{y}.pbf";
 const HISTORY_MAP_ATTRIBUTION =
   '<a href="https://www.openhistoricalmap.org/" target="_blank" rel="noreferrer">OpenHistoricalMap</a> contributors';
 
-function ensureHistoryMapLayer(map: MLMap, opacity: number) {
-  if (map.getLayer(HISTORY_MAP_LAYER_ID)) return;
-  if (map.getSource(HISTORY_MAP_SOURCE_ID))
-    map.removeSource(HISTORY_MAP_SOURCE_ID);
-  map.addSource(HISTORY_MAP_SOURCE_ID, {
-    type: "raster",
-    tiles: [HISTORY_MAP_TILE_URL],
-    tileSize: 256,
-    maxzoom: 18,
-    attribution: HISTORY_MAP_ATTRIBUTION,
-  });
-  map.addLayer({
-    id: HISTORY_MAP_LAYER_ID,
-    type: "raster",
-    source: HISTORY_MAP_SOURCE_ID,
-    paint: { "raster-opacity": opacity, "raster-fade-duration": 200 },
-  });
+interface HistoryMapLayerSpec {
+  id: string;
+  sourceLayer: string;
+  layer: maplibregl.LayerSpecification;
 }
 
-function updateHistoryMapOpacity(map: MLMap, opacity: number) {
-  if (map.getLayer(HISTORY_MAP_LAYER_ID)) {
-    map.setPaintProperty(HISTORY_MAP_LAYER_ID, "raster-opacity", opacity);
+function buildHistoryMapDateFilter(
+  year: number,
+): maplibregl.FilterSpecification {
+  // A feature is visible iff its lifespan includes the target year.
+  // OHM's schema uses decimal years (`start_decdate` / `end_decdate`)
+  // for filterable temporal data; missing fields = "always existed"
+  // (start) or "still extant" (end). Without `coalesce` MapLibre
+  // would drop features lacking either attribute.
+  return [
+    "all",
+    ["<=", ["coalesce", ["get", "start_decdate"], 0], year],
+    [">=", ["coalesce", ["get", "end_decdate"], 9999], year],
+  ] as maplibregl.FilterSpecification;
+}
+
+function historyMapLayerSpecs(opacity: number): HistoryMapLayerSpec[] {
+  // Sepia / parchment palette tuned to read clearly over the dark
+  // HUD basemap. Opacity is multiplied with the master alpha later.
+  const fillAlpha = 0.55 * opacity;
+  const lineAlpha = 0.85 * opacity;
+  const labelAlpha = 0.95 * opacity;
+  return [
+    {
+      id: "ohm-water-areas",
+      sourceLayer: "water_areas",
+      layer: {
+        id: "ohm-water-areas",
+        type: "fill",
+        source: HISTORY_MAP_SOURCE_ID,
+        "source-layer": "water_areas",
+        paint: {
+          "fill-color": "#3b5470",
+          "fill-opacity": fillAlpha,
+        },
+      },
+    },
+    {
+      id: "ohm-landuse-areas",
+      sourceLayer: "landuse_areas",
+      layer: {
+        id: "ohm-landuse-areas",
+        type: "fill",
+        source: HISTORY_MAP_SOURCE_ID,
+        "source-layer": "landuse_areas",
+        paint: {
+          "fill-color": "#5a4a32",
+          "fill-opacity": fillAlpha * 0.6,
+        },
+      },
+    },
+    {
+      id: "ohm-place-areas",
+      sourceLayer: "place_areas",
+      layer: {
+        id: "ohm-place-areas",
+        type: "fill",
+        source: HISTORY_MAP_SOURCE_ID,
+        "source-layer": "place_areas",
+        paint: {
+          "fill-color": "#6b563b",
+          "fill-opacity": fillAlpha * 0.4,
+          "fill-outline-color": "#c89968",
+        },
+      },
+    },
+    {
+      id: "ohm-buildings",
+      sourceLayer: "buildings",
+      layer: {
+        id: "ohm-buildings",
+        type: "fill",
+        source: HISTORY_MAP_SOURCE_ID,
+        "source-layer": "buildings",
+        minzoom: 12,
+        paint: {
+          "fill-color": "#c89968",
+          "fill-opacity": fillAlpha,
+          "fill-outline-color": "#8a6840",
+        },
+      },
+    },
+    {
+      id: "ohm-water-lines",
+      sourceLayer: "water_lines",
+      layer: {
+        id: "ohm-water-lines",
+        type: "line",
+        source: HISTORY_MAP_SOURCE_ID,
+        "source-layer": "water_lines",
+        paint: {
+          "line-color": "#3b5470",
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            8, 0.4,
+            14, 1.2,
+          ],
+          "line-opacity": lineAlpha,
+        },
+      },
+    },
+    {
+      id: "ohm-transport-lines",
+      sourceLayer: "transport_lines",
+      layer: {
+        id: "ohm-transport-lines",
+        type: "line",
+        source: HISTORY_MAP_SOURCE_ID,
+        "source-layer": "transport_lines",
+        paint: {
+          "line-color": "#d8b894",
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            8, 0.3,
+            12, 0.8,
+            16, 1.6,
+          ],
+          "line-opacity": lineAlpha * 0.85,
+        },
+      },
+    },
+    {
+      id: "ohm-place-labels",
+      sourceLayer: "place_areas",
+      layer: {
+        id: "ohm-place-labels",
+        type: "symbol",
+        source: HISTORY_MAP_SOURCE_ID,
+        "source-layer": "place_areas",
+        minzoom: 6,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-font": ["Noto Sans Regular"],
+          "text-size": [
+            "interpolate", ["linear"], ["zoom"],
+            6, 9,
+            12, 12,
+          ],
+          "text-anchor": "center",
+          "text-allow-overlap": false,
+          "text-padding": 6,
+        },
+        paint: {
+          "text-color": "#e8c89a",
+          "text-halo-color": "#1a0f06",
+          "text-halo-width": 1.4,
+          "text-opacity": labelAlpha,
+        },
+      },
+    },
+  ];
+}
+
+const HISTORY_MAP_LAYER_IDS = historyMapLayerSpecs(1).map((s) => s.id);
+
+function ensureHistoryMapLayer(map: MLMap, opacity: number, year: number) {
+  if (!map.getSource(HISTORY_MAP_SOURCE_ID)) {
+    map.addSource(HISTORY_MAP_SOURCE_ID, {
+      type: "vector",
+      tiles: [HISTORY_MAP_TILE_URL],
+      minzoom: 0,
+      maxzoom: 14,
+      attribution: HISTORY_MAP_ATTRIBUTION,
+    });
+  }
+  const dateFilter = buildHistoryMapDateFilter(year);
+  for (const spec of historyMapLayerSpecs(opacity)) {
+    if (map.getLayer(spec.id)) continue;
+    map.addLayer(spec.layer);
+    map.setFilter(spec.id, dateFilter);
   }
 }
 
+function applyHistoryMapYear(map: MLMap, year: number) {
+  const dateFilter = buildHistoryMapDateFilter(year);
+  for (const id of HISTORY_MAP_LAYER_IDS) {
+    if (map.getLayer(id)) map.setFilter(id, dateFilter);
+  }
+}
+
+function updateHistoryMapOpacity(map: MLMap, opacity: number) {
+  // Re-derive the per-layer alpha values from the master opacity.
+  const fillAlpha = 0.55 * opacity;
+  const lineAlpha = 0.85 * opacity;
+  const labelAlpha = 0.95 * opacity;
+  const setFill = (id: string, alpha: number) => {
+    if (map.getLayer(id)) map.setPaintProperty(id, "fill-opacity", alpha);
+  };
+  const setLine = (id: string, alpha: number) => {
+    if (map.getLayer(id)) map.setPaintProperty(id, "line-opacity", alpha);
+  };
+  const setText = (id: string, alpha: number) => {
+    if (map.getLayer(id)) map.setPaintProperty(id, "text-opacity", alpha);
+  };
+  setFill("ohm-water-areas", fillAlpha);
+  setFill("ohm-landuse-areas", fillAlpha * 0.6);
+  setFill("ohm-place-areas", fillAlpha * 0.4);
+  setFill("ohm-buildings", fillAlpha);
+  setLine("ohm-water-lines", lineAlpha);
+  setLine("ohm-transport-lines", lineAlpha * 0.85);
+  setText("ohm-place-labels", labelAlpha);
+}
+
 function removeHistoryMapLayer(map: MLMap) {
-  if (map.getLayer(HISTORY_MAP_LAYER_ID))
-    map.removeLayer(HISTORY_MAP_LAYER_ID);
+  for (const id of HISTORY_MAP_LAYER_IDS) {
+    if (map.getLayer(id)) map.removeLayer(id);
+  }
   if (map.getSource(HISTORY_MAP_SOURCE_ID))
     map.removeSource(HISTORY_MAP_SOURCE_ID);
 }
@@ -678,13 +864,8 @@ function ensureHistoryLandmarksLayer(map: MLMap, opacity: number) {
           14, 5.5,
           17, 7,
         ],
-        "circle-color": [
-          "match",
-          ["get", "source"],
-          "wikidata", "#fbbf24",
-          "#d4ff38",
-        ],
-        "circle-stroke-color": "#0a0a0b",
+        "circle-color": "#c4b5fd",
+        "circle-stroke-color": "#1a0f2b",
         "circle-stroke-width": 1.4,
         "circle-opacity": opacity,
       },
@@ -3060,13 +3241,16 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       const datePart = props.inception
         ? `${props.inception}${props.dissolved ? `–${props.dissolved}` : ""}`
         : "date unknown";
-      const initialHtml = `
+      const headerHtml = `
         <div class="hud-popup-header">
           <span class="hud-popup-title">${escapeHtml(props.name)}</span>
           <span class="hud-popup-meta">${escapeHtml(props.kind)} · ${datePart}</span>
         </div>
-        <div class="hud-popup-body" data-state="loading">Loading summary…</div>
       `;
+      const loadingHtml =
+        '<div class="hud-popup-body" data-state="loading">Loading summary…</div>';
+      const noArticleHtml =
+        '<div class="hud-popup-body">No Wikipedia article linked.</div>';
       historyPopupRef.current?.remove();
       const popup = new maplibregl.Popup({
         className: "hud-popup",
@@ -3076,23 +3260,21 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
         offset: 12,
       })
         .setLngLat(coords)
-        .setHTML(initialHtml)
+        .setHTML(headerHtml + loadingHtml)
         .addTo(map);
       historyPopupRef.current = popup;
 
       const title = props.wikipediaTitle;
+      const lang = props.wikipediaLang ?? "en";
       if (title) {
-        fetchWikipediaSummary(title)
+        fetchWikipediaSummary(title, lang)
           .then((summary) => {
             if (popup !== historyPopupRef.current) return;
-            popup.setHTML(initialHtml + summaryToHtml(summary, title));
+            popup.setHTML(headerHtml + summaryToHtml(summary, title));
           })
           .catch(() => {});
       } else {
-        popup.setHTML(
-          initialHtml +
-            `<div class="hud-popup-body">No Wikipedia article linked.</div>`,
-        );
+        popup.setHTML(headerHtml + noArticleHtml);
       }
     };
 
@@ -3137,7 +3319,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     applyHistoryLandmarksOpacity(map, historyLandmarksOpacity);
   }, [historyLandmarksActive, historyLandmarksOpacity]);
 
-  // ── History · OpenHistoricalMap raster overlay ───────────────────
+  // ── History · OpenHistoricalMap vector overlay ───────────────────
   useEffect(() => {
     if (!historyMapActive) {
       const map = mapRef.current;
@@ -3149,7 +3331,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     const map = mapRef.current;
     if (!map || !historyMapActive) return;
     const apply = () => {
-      ensureHistoryMapLayer(map, historyMapOpacity);
+      ensureHistoryMapLayer(map, historyMapOpacity, historyYear);
     };
     if (map.isStyleLoaded()) apply();
     else map.once("style.load", apply);
@@ -3160,6 +3342,13 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     // Re-apply when the basemap changes (style reload removes overlays).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyMapActive, active]);
+
+  // Slider drag → just `setFilter` on every OHM layer. Cheap.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !historyMapActive) return;
+    applyHistoryMapYear(map, historyYear);
+  }, [historyMapActive, historyYear]);
 
   useEffect(() => {
     const map = mapRef.current;

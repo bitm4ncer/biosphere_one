@@ -9,9 +9,10 @@ export interface WikipediaSummary {
   extract: string;
   url: string;
   thumbnail?: { source: string; width: number; height: number };
+  /** Wikipedia language edition the summary came from (e.g. "en", "de"). */
+  lang: string;
 }
 
-const SUMMARY_BASE = "https://en.wikipedia.org/api/rest_v1/page/summary/";
 const cache = new Map<string, WikipediaSummary | null>();
 
 interface RestSummary {
@@ -21,24 +22,25 @@ interface RestSummary {
   thumbnail?: { source: string; width: number; height: number };
 }
 
-export async function fetchWikipediaSummary(
+async function fetchOne(
   title: string,
+  lang: string,
   signal?: AbortSignal,
 ): Promise<WikipediaSummary | null> {
-  if (!title) return null;
-  if (cache.has(title)) return cache.get(title) ?? null;
+  const cacheKey = `${lang}:${title}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
   try {
-    const res = await fetch(SUMMARY_BASE + encodeURIComponent(title), {
-      signal,
-      headers: { Accept: "application/json" },
-    });
+    const res = await fetch(
+      `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+      { signal, headers: { Accept: "application/json" } },
+    );
     if (!res.ok) {
-      cache.set(title, null);
+      cache.set(cacheKey, null);
       return null;
     }
     const data = (await res.json()) as RestSummary;
     if (!data.extract) {
-      cache.set(title, null);
+      cache.set(cacheKey, null);
       return null;
     }
     const summary: WikipediaSummary = {
@@ -46,14 +48,38 @@ export async function fetchWikipediaSummary(
       extract: data.extract,
       url:
         data.content_urls?.desktop?.page ??
-        `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+        `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+      lang,
     };
     if (data.thumbnail) summary.thumbnail = data.thumbnail;
-    cache.set(title, summary);
+    cache.set(cacheKey, summary);
     return summary;
   } catch (err) {
     if ((err as Error).name === "AbortError") throw err;
-    cache.set(title, null);
+    cache.set(cacheKey, null);
     return null;
   }
+}
+
+/**
+ * Try the preferred language first, then fall back through alternates.
+ * The default chain (en → de) covers 90 %+ of the Wikidata + OSM
+ * historic features in our European-leaning default viewport.
+ */
+export async function fetchWikipediaSummary(
+  title: string,
+  preferredLang: string = "en",
+  signal?: AbortSignal,
+): Promise<WikipediaSummary | null> {
+  if (!title) return null;
+  const langs =
+    preferredLang === "en" ? ["en", "de"] : [preferredLang, "en", "de"];
+  const seen = new Set<string>();
+  for (const lang of langs) {
+    if (seen.has(lang)) continue;
+    seen.add(lang);
+    const summary = await fetchOne(title, lang, signal);
+    if (summary) return summary;
+  }
+  return null;
 }

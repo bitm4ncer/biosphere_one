@@ -44,8 +44,10 @@ export interface LandmarkProperties {
   dissolved?: number;
   /** Wikidata QID (without prefix), when known. */
   wikidataId?: string;
-  /** English Wikipedia article title, when known. */
+  /** Wikipedia article title, when known. */
   wikipediaTitle?: string;
+  /** Wikipedia language edition for the title above (default "en"). */
+  wikipediaLang?: string;
   /** Source bucket — useful for diagnostics + potential UI filters. */
   source: "osm" | "wikidata";
 }
@@ -148,10 +150,21 @@ async function fetchOverpassLandmarks(
       typeof tags.wikidata === "string" && /^Q\d+$/.test(tags.wikidata)
         ? tags.wikidata
         : undefined;
-    const wikipediaTitle =
-      typeof tags.wikipedia === "string" && tags.wikipedia.includes(":")
-        ? tags.wikipedia.split(":").slice(1).join(":")
-        : undefined;
+    // OSM `wikipedia` tag format: `lang:Article Title` (e.g. "de:Düsseldorf").
+    // Both pieces matter — the lang tells us which Wikipedia edition has the
+    // article. Without it we'd default to en.wikipedia and 404 on most
+    // German-only sites.
+    let wikipediaLang: string | undefined;
+    let wikipediaTitle: string | undefined;
+    if (typeof tags.wikipedia === "string" && tags.wikipedia.includes(":")) {
+      const idx = tags.wikipedia.indexOf(":");
+      const lang = tags.wikipedia.slice(0, idx);
+      const title = tags.wikipedia.slice(idx + 1);
+      if (/^[a-z]{2,3}$/i.test(lang) && title) {
+        wikipediaLang = lang.toLowerCase();
+        wikipediaTitle = title;
+      }
+    }
     const props: LandmarkProperties = {
       id: `osm/${el.type}/${el.id}`,
       name,
@@ -162,6 +175,7 @@ async function fetchOverpassLandmarks(
     if (dissolved !== undefined) props.dissolved = dissolved;
     if (wikidataId) props.wikidataId = wikidataId;
     if (wikipediaTitle) props.wikipediaTitle = wikipediaTitle;
+    if (wikipediaLang) props.wikipediaLang = wikipediaLang;
     out.push({
       type: "Feature",
       geometry: { type: "Point", coordinates: [lon, lat] },
@@ -188,6 +202,7 @@ interface SparqlRow {
   dissolved?: SparqlBinding;
   kind?: SparqlBinding;
   wpTitle?: SparqlBinding;
+  wpTitleDe?: SparqlBinding;
 }
 
 interface SparqlResponse {
@@ -238,7 +253,7 @@ async function fetchWikidataLandmarks(
   // castle, Q1149531 fort, Q57831 fortress, etc.) and a positive
   // VALUES list silently skipped most of them.
   const query = `
-    SELECT ?item ?itemLabel ?coord ?inception ?dissolved ?kind ?wpTitle WHERE {
+    SELECT ?item ?itemLabel ?coord ?inception ?dissolved ?kind ?wpTitle ?wpTitleDe WHERE {
       SERVICE wikibase:box {
         ?item wdt:P625 ?coord .
         bd:serviceParam wikibase:cornerSouthWest "Point(${fmt(w)} ${fmt(s)})"^^geo:wktLiteral .
@@ -251,6 +266,11 @@ async function fetchWikidataLandmarks(
         ?wpArticle schema:about ?item ;
                    schema:isPartOf <https://en.wikipedia.org/> ;
                    schema:name ?wpTitle .
+      }
+      OPTIONAL {
+        ?wpArticleDe schema:about ?item ;
+                     schema:isPartOf <https://de.wikipedia.org/> ;
+                     schema:name ?wpTitleDe .
       }
       FILTER NOT EXISTS {
         ?item wdt:P31 ?excluded .
@@ -291,7 +311,14 @@ async function fetchWikidataLandmarks(
     const name = row.itemLabel?.value ?? qid;
     const kindUri = row.kind?.value ?? "";
     const kindQid = kindUri.split("/").pop() ?? "site";
-    const wikipediaTitle = row.wpTitle?.value ?? undefined;
+    // Prefer en.wikipedia, fall back to de.wikipedia. The wikipedia.ts
+    // helper does its own en→de fallback at fetch time too, but
+    // committing to a known-existing edition up-front avoids the extra
+    // round-trip for items that only have a German article.
+    const wpEn = row.wpTitle?.value;
+    const wpDe = row.wpTitleDe?.value;
+    const wikipediaTitle = wpEn ?? wpDe;
+    const wikipediaLang = wpEn ? "en" : wpDe ? "de" : undefined;
     const existing = byItem.get(qid);
     if (existing) {
       const prev = existing.properties.inception;
@@ -307,6 +334,7 @@ async function fetchWikidataLandmarks(
     };
     if (dissolved !== undefined) props.dissolved = dissolved;
     if (wikipediaTitle) props.wikipediaTitle = wikipediaTitle;
+    if (wikipediaLang) props.wikipediaLang = wikipediaLang;
     byItem.set(qid, {
       type: "Feature",
       geometry: { type: "Point", coordinates: coords },
