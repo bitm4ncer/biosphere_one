@@ -774,10 +774,18 @@ function ensureHistoryMapLayer(map: MLMap, opacity: number, year: number) {
       attribution: HISTORY_MAP_ATTRIBUTION,
     });
   }
+  // OHM has to sit BELOW the landmark markers — otherwise the sepia
+  // fills cover the dots and clicks land on OHM features instead of
+  // the actual landmarks.
+  const beforeId = firstExistingLayerId(map, [
+    HISTORY_LANDMARKS_HIT_LAYER_ID,
+    HISTORY_LANDMARKS_DOT_LAYER_ID,
+    HISTORY_LANDMARKS_LABEL_LAYER_ID,
+  ]);
   const dateFilter = buildHistoryMapDateFilter(year);
   for (const spec of historyMapLayerSpecs(opacity)) {
     if (map.getLayer(spec.id)) continue;
-    map.addLayer(spec.layer);
+    map.addLayer(spec.layer, beforeId);
     map.setFilter(spec.id, dateFilter);
   }
 }

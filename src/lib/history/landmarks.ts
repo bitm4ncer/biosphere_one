@@ -202,7 +202,6 @@ interface SparqlRow {
   dissolved?: SparqlBinding;
   kind?: SparqlBinding;
   wpTitle?: SparqlBinding;
-  wpTitleDe?: SparqlBinding;
 }
 
 interface SparqlResponse {
@@ -253,7 +252,7 @@ async function fetchWikidataLandmarks(
   // castle, Q1149531 fort, Q57831 fortress, etc.) and a positive
   // VALUES list silently skipped most of them.
   const query = `
-    SELECT ?item ?itemLabel ?coord ?inception ?dissolved ?kind ?wpTitle ?wpTitleDe WHERE {
+    SELECT ?item ?itemLabel ?coord ?inception ?dissolved ?kind ?wpTitle WHERE {
       SERVICE wikibase:box {
         ?item wdt:P625 ?coord .
         bd:serviceParam wikibase:cornerSouthWest "Point(${fmt(w)} ${fmt(s)})"^^geo:wktLiteral .
@@ -266,11 +265,6 @@ async function fetchWikidataLandmarks(
         ?wpArticle schema:about ?item ;
                    schema:isPartOf <https://en.wikipedia.org/> ;
                    schema:name ?wpTitle .
-      }
-      OPTIONAL {
-        ?wpArticleDe schema:about ?item ;
-                     schema:isPartOf <https://de.wikipedia.org/> ;
-                     schema:name ?wpTitleDe .
       }
       FILTER NOT EXISTS {
         ?item wdt:P31 ?excluded .
@@ -311,14 +305,7 @@ async function fetchWikidataLandmarks(
     const name = row.itemLabel?.value ?? qid;
     const kindUri = row.kind?.value ?? "";
     const kindQid = kindUri.split("/").pop() ?? "site";
-    // Prefer en.wikipedia, fall back to de.wikipedia. The wikipedia.ts
-    // helper does its own en→de fallback at fetch time too, but
-    // committing to a known-existing edition up-front avoids the extra
-    // round-trip for items that only have a German article.
-    const wpEn = row.wpTitle?.value;
-    const wpDe = row.wpTitleDe?.value;
-    const wikipediaTitle = wpEn ?? wpDe;
-    const wikipediaLang = wpEn ? "en" : wpDe ? "de" : undefined;
+    const wikipediaTitle = row.wpTitle?.value;
     const existing = byItem.get(qid);
     if (existing) {
       const prev = existing.properties.inception;
@@ -333,8 +320,10 @@ async function fetchWikidataLandmarks(
       source: "wikidata",
     };
     if (dissolved !== undefined) props.dissolved = dissolved;
-    if (wikipediaTitle) props.wikipediaTitle = wikipediaTitle;
-    if (wikipediaLang) props.wikipediaLang = wikipediaLang;
+    if (wikipediaTitle) {
+      props.wikipediaTitle = wikipediaTitle;
+      props.wikipediaLang = "en";
+    }
     byItem.set(qid, {
       type: "Feature",
       geometry: { type: "Point", coordinates: coords },
