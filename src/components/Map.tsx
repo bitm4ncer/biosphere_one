@@ -641,18 +641,23 @@ function ensureHistoryLandmarksLayer(map: MLMap, opacity: number) {
       source: HISTORY_LANDMARKS_SOURCE_ID,
       minzoom: HISTORY_LANDMARKS_MIN_ZOOM,
       paint: {
+        // Hot pink with a thick white stroke — vivid against the
+        // sepia OHM basemap, the dark vector HUD, and satellite
+        // imagery alike. (The previous pastel lavender disappeared on
+        // the parchment-toned timeline basemap.)
         "circle-radius": [
           "interpolate",
           ["linear"],
           ["zoom"],
-          6, 2,
-          10, 4,
-          14, 5.5,
-          17, 7,
+          4, 3,
+          6, 4,
+          10, 5.5,
+          14, 7,
+          17, 8.5,
         ],
-        "circle-color": "#c4b5fd",
-        "circle-stroke-color": "#1a0f2b",
-        "circle-stroke-width": 1.4,
+        "circle-color": "#ff2d92",
+        "circle-stroke-color": "#ffffff",
+        "circle-stroke-width": 1.6,
         "circle-opacity": opacity,
       },
     });
@@ -1701,7 +1706,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     naturaSitesOpacity,
     landCoverOn,
     landCoverOpacity,
-    historyTimeTravelOn,
     historyLandmarksOn,
     historyLandmarksOpacity,
     historyMapOn,
@@ -1729,7 +1733,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     setNaturaSitesOpacity,
     setLandCoverOn,
     setLandCoverOpacity,
-    setHistoryTimeTravelOn,
     setHistoryLandmarksOn,
     setHistoryLandmarksOpacity,
     setHistoryMapOn,
@@ -1737,9 +1740,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   } = useSettings();
   const baseActive =
     basemapMode === "vector" ? vectorBasemapId : imageBasemapId;
-  // Per-layer history toggles only take effect when Time Travel is on.
-  const historyLandmarksActive = historyTimeTravelOn && historyLandmarksOn;
-  const historyMapActive = historyTimeTravelOn && historyMapOn;
+  // Timeline-Map and Historic Landmarks toggle independently. The
+  // year slider is meaningful for both, but the user can run either
+  // one without the other.
+  const historyLandmarksActive = historyLandmarksOn;
+  const historyMapActive = historyMapOn;
   // When Time Travel + the historical basemap are on, the OHM style
   // replaces the user's chosen basemap. We thread this through the
   // existing basemap-swap pipeline by reporting OHM as the active id
@@ -3858,8 +3863,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               <HikingPanel mapRef={mapRef} />
             ) : activePane === "history" ? (
               <HistoryPanel
-                timeTravelOn={historyTimeTravelOn}
-                onTimeTravelOnChange={setHistoryTimeTravelOn}
                 year={historyYear}
                 onYearChange={setHistoryYear}
                 earliestVisibleYear={historyEarliestYear}

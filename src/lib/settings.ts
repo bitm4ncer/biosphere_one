@@ -57,15 +57,15 @@ export interface Settings {
   /** ESA WorldCover 10m global land cover. */
   landCoverOn: boolean;
   landCoverOpacity: number;
-  /** History panel — master "Time Travel" toggle. Gates the slider's
-   * effect on landmarks + activates the historical-map overlay. */
-  historyTimeTravelOn: boolean;
-  /** History panel — historic landmarks (OSM `historic=*` + Wikidata). */
+  /** History panel — when on, swaps the basemap to OHM's "historical"
+   * style for the chosen year and exposes the year slider. */
+  historyMapOn: boolean;
+  /** History panel — independent of historyMapOn. Shows historic
+   * landmarks (OSM `historic=*` + Wikidata). When the timeline map is
+   * also on, the year slider filters them; otherwise all known sites
+   * up to today are shown. */
   historyLandmarksOn: boolean;
   historyLandmarksOpacity: number;
-  /** History panel — when on, swaps the basemap to OHM's "historical"
-   * style for the chosen year. Replaces the user's normal basemap. */
-  historyMapOn: boolean;
   /** Currently selected year on the History timeline (1500..currentYear). */
   historyYear: number;
   setImageBasemapId: (id: string) => void;
@@ -92,7 +92,6 @@ export interface Settings {
   setNaturaSitesOpacity: (o: number) => void;
   setLandCoverOn: (on: boolean) => void;
   setLandCoverOpacity: (o: number) => void;
-  setHistoryTimeTravelOn: (on: boolean) => void;
   setHistoryLandmarksOn: (on: boolean) => void;
   setHistoryLandmarksOpacity: (o: number) => void;
   setHistoryMapOn: (on: boolean) => void;
@@ -129,10 +128,9 @@ export const useSettings = create<Settings>()(
       naturaSitesOpacity: 0.4,
       landCoverOn: false,
       landCoverOpacity: 0.55,
-      historyTimeTravelOn: false,
-      historyLandmarksOn: true,
+      historyMapOn: false,
+      historyLandmarksOn: false,
       historyLandmarksOpacity: 0.9,
-      historyMapOn: true,
       historyYear: HISTORY_YEAR_MAX,
       setImageBasemapId: (id) => set({ imageBasemapId: id }),
       setVectorBasemapId: (id) => set({ vectorBasemapId: id }),
@@ -162,7 +160,6 @@ export const useSettings = create<Settings>()(
       setNaturaSitesOpacity: (o) => set({ naturaSitesOpacity: clamp01(o) }),
       setLandCoverOn: (on) => set({ landCoverOn: on }),
       setLandCoverOpacity: (o) => set({ landCoverOpacity: clamp01(o) }),
-      setHistoryTimeTravelOn: (on) => set({ historyTimeTravelOn: on }),
       setHistoryLandmarksOn: (on) => set({ historyLandmarksOn: on }),
       setHistoryLandmarksOpacity: (o) =>
         set({ historyLandmarksOpacity: clamp01(o) }),
@@ -177,7 +174,7 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 17,
+      version: 18,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -204,15 +201,26 @@ export const useSettings = create<Settings>()(
         naturaSitesOpacity: state.naturaSitesOpacity,
         landCoverOn: state.landCoverOn,
         landCoverOpacity: state.landCoverOpacity,
-        historyTimeTravelOn: state.historyTimeTravelOn,
+        historyMapOn: state.historyMapOn,
         historyLandmarksOn: state.historyLandmarksOn,
         historyLandmarksOpacity: state.historyLandmarksOpacity,
-        historyMapOn: state.historyMapOn,
         historyYear: state.historyYear,
       }),
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v17 → v18: collapse the master `historyTimeTravelOn` switch.
+        // Timeline-Map and Landmarks now toggle independently. Carry
+        // each user's effective state forward — both layers were
+        // gated on Time Travel before, so OR them in.
+        if (version < 18) {
+          const hadTimeTravel = p.historyTimeTravelOn === true;
+          if (!hadTimeTravel) {
+            p.historyMapOn = false;
+            p.historyLandmarksOn = false;
+          }
+          delete p.historyTimeTravelOn;
+        }
         // v16 → v17: drop `historyMapOpacity`. The historical map is no
         // longer an overlay (which had an opacity slider) — it's now a
         // basemap swap, where opacity is meaningless. Existing values
