@@ -10,7 +10,6 @@ import {
 } from "./basemaps";
 
 export type Projection = "mercator" | "globe";
-export type OverlayKind = "clouds" | "rail" | "fires" | "ndvi";
 export type RailStyle = "tiles" | "lines";
 export type BasemapMode = "photo" | "hybrid" | "vector";
 export type OrientationMode = "north" | "route" | "heading";
@@ -35,13 +34,14 @@ export interface Settings {
    * align to the device compass heading.
    */
   orientationMode: OrientationMode;
-  activeOverlay: OverlayKind | null;
-  weatherOpacity: number;
+  /** Rails panel — toggle the rail-network overlay (independent of the
+   * Biosphere stack; only ever zero/one rail style at a time). */
+  railOn: boolean;
   railwayOpacity: number;
   railStyle: RailStyle;
-  firesOpacity: number;
-  ndviOpacity: number;
   /** Biosphere panel — independent overlay toggles, can stack. */
+  ndviOn: boolean;
+  ndviOpacity: number;
   speciesOn: boolean;
   speciesOpacity: number;
   /** GBIF taxonKey filter, null = all taxa. Common keys: 212 birds,
@@ -75,11 +75,10 @@ export interface Settings {
   setLiveBasemapDayOffset: (offset: number) => void;
   setProjection: (p: Projection) => void;
   setOrientationMode: (m: OrientationMode) => void;
-  setActiveOverlay: (kind: OverlayKind | null) => void;
-  setWeatherOpacity: (o: number) => void;
+  setRailOn: (on: boolean) => void;
   setRailwayOpacity: (o: number) => void;
   setRailStyle: (style: RailStyle) => void;
-  setFiresOpacity: (o: number) => void;
+  setNdviOn: (on: boolean) => void;
   setNdviOpacity: (o: number) => void;
   setSpeciesOn: (on: boolean) => void;
   setSpeciesOpacity: (o: number) => void;
@@ -111,11 +110,10 @@ export const useSettings = create<Settings>()(
       liveBasemapDayOffset: 0,
       projection: "mercator",
       orientationMode: "north",
-      activeOverlay: null,
-      weatherOpacity: 0.8,
+      railOn: false,
       railwayOpacity: 0.85,
       railStyle: "lines",
-      firesOpacity: 0.9,
+      ndviOn: false,
       ndviOpacity: 0.7,
       speciesOn: false,
       speciesOpacity: 0.85,
@@ -143,12 +141,11 @@ export const useSettings = create<Settings>()(
         set({ liveBasemapDayOffset: Math.max(0, Math.min(14, Math.round(offset))) }),
       setProjection: (p) => set({ projection: p }),
       setOrientationMode: (m) => set({ orientationMode: m }),
-      setActiveOverlay: (kind) => set({ activeOverlay: kind }),
-      setWeatherOpacity: (o) => set({ weatherOpacity: o }),
-      setRailwayOpacity: (o) => set({ railwayOpacity: o }),
+      setRailOn: (on) => set({ railOn: on }),
+      setRailwayOpacity: (o) => set({ railwayOpacity: clamp01(o) }),
       setRailStyle: (style) => set({ railStyle: style }),
-      setFiresOpacity: (o) => set({ firesOpacity: o }),
-      setNdviOpacity: (o) => set({ ndviOpacity: o }),
+      setNdviOn: (on) => set({ ndviOn: on }),
+      setNdviOpacity: (o) => set({ ndviOpacity: clamp01(o) }),
       setSpeciesOn: (on) => set({ speciesOn: on }),
       setSpeciesOpacity: (o) => set({ speciesOpacity: clamp01(o) }),
       setSpeciesTaxonKey: (key) => set({ speciesTaxonKey: key }),
@@ -174,7 +171,7 @@ export const useSettings = create<Settings>()(
     }),
     {
       name: "biosphere1:settings",
-      version: 18,
+      version: 19,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         imageBasemapId: state.imageBasemapId,
@@ -184,11 +181,10 @@ export const useSettings = create<Settings>()(
         liveBasemapDayOffset: state.liveBasemapDayOffset,
         projection: state.projection,
         orientationMode: state.orientationMode,
-        activeOverlay: state.activeOverlay,
-        weatherOpacity: state.weatherOpacity,
+        railOn: state.railOn,
         railwayOpacity: state.railwayOpacity,
         railStyle: state.railStyle,
-        firesOpacity: state.firesOpacity,
+        ndviOn: state.ndviOn,
         ndviOpacity: state.ndviOpacity,
         speciesOn: state.speciesOn,
         speciesOpacity: state.speciesOpacity,
@@ -209,6 +205,18 @@ export const useSettings = create<Settings>()(
       migrate: (persisted: unknown, version: number) => {
         if (!persisted || typeof persisted !== "object") return persisted;
         const p = persisted as Record<string, unknown>;
+        // v18 → v19: Clouds + Fires removed entirely; NDVI moved out of
+        // the exclusive `activeOverlay` slot and into the Biosphere stack
+        // as an independent toggle. Rail collapses to its own boolean.
+        if (version < 19) {
+          const prev = p.activeOverlay;
+          p.railOn = prev === "rail";
+          p.ndviOn = prev === "ndvi";
+          delete p.activeOverlay;
+          delete p.weatherOpacity;
+          delete p.firesOpacity;
+          if (typeof p.ndviOpacity !== "number") p.ndviOpacity = 0.7;
+        }
         // v17 → v18: collapse the master `historyTimeTravelOn` switch.
         // Timeline-Map and Landmarks now toggle independently. Carry
         // each user's effective state forward — both layers were
@@ -223,26 +231,19 @@ export const useSettings = create<Settings>()(
         }
         // v16 → v17: drop `historyMapOpacity`. The historical map is no
         // longer an overlay (which had an opacity slider) — it's now a
-        // basemap swap, where opacity is meaningless. Existing values
-        // would be silently ignored, but we delete them to keep
-        // localStorage tidy and prevent stale data from surfacing if we
-        // ever reintroduce an opacity field with the same name.
+        // basemap swap, where opacity is meaningless.
         if (version < 17) {
           delete p.historyMapOpacity;
         }
         // v15 → v16: split the History panel into a master "Time Travel"
-        // toggle + per-layer toggles (Map / Landmarks). Existing users
-        // who had landmarks on now keep that, but Time Travel itself is
-        // off by default (otherwise revisits would auto-activate the
-        // historical-map overlay, which they didn't opt into).
+        // toggle + per-layer toggles (Map / Landmarks).
         if (version < 16) {
           if (typeof p.historyTimeTravelOn !== "boolean")
             p.historyTimeTravelOn = false;
           if (typeof p.historyMapOn !== "boolean") p.historyMapOn = true;
         }
         // v14 → v15: add History panel — landmarks toggle + opacity +
-        // selected year. Without numeric defaults the slider crashes on
-        // first render, so always backfill.
+        // selected year.
         if (version < 15) {
           if (typeof p.historyLandmarksOn !== "boolean")
             p.historyLandmarksOn = false;
@@ -270,9 +271,7 @@ export const useSettings = create<Settings>()(
           if (typeof p.landCoverOn !== "boolean") p.landCoverOn = false;
           if (typeof p.landCoverOpacity !== "number") p.landCoverOpacity = 0.55;
         }
-        // v12 → v13: introduce Biosphere panel layers. Independent of
-        // activeOverlay; backfill defaults for users who didn't have
-        // these fields persisted yet.
+        // v12 → v13: introduce Biosphere panel layers.
         if (version < 13) {
           if (typeof p.speciesOn !== "boolean") p.speciesOn = false;
           if (typeof p.speciesOpacity !== "number") p.speciesOpacity = 0.85;
@@ -281,8 +280,7 @@ export const useSettings = create<Settings>()(
           if (typeof p.no2On !== "boolean") p.no2On = false;
           if (typeof p.no2Opacity !== "number") p.no2Opacity = 0.55;
         }
-        // v11 → v12: introduce orientationMode. Default to existing
-        // behaviour (north-up).
+        // v11 → v12: introduce orientationMode.
         if (version < 12) {
           if (
             p.orientationMode !== "north" &&
@@ -293,37 +291,29 @@ export const useSettings = create<Settings>()(
           }
         }
         // v9 → v10: revert the temporary "tiles" default. Lines is the
-        // primary mode again; users who liked tiles can switch manually.
+        // primary mode again.
         if (version < 10 && p.railStyle === "tiles") {
           p.railStyle = "lines";
         }
-        // v10 → v11: the old "clouds" overlay was a 7-day VIIRS browser
-        // (now lives in Timeline · Live). The new "clouds" is RainViewer
-        // satellite radar — visually different. Reset so the user opts
-        // in to the new visual deliberately.
+        // v10 → v11: previously reset the cloud-overlay default. Clouds
+        // are now removed entirely (see v19); we keep the deletion of
+        // the legacy field here for users coming from very old versions.
         if (version < 11) {
-          if (p.activeOverlay === "clouds") p.activeOverlay = null;
           if (typeof p.liveBasemapDayOffset !== "number") {
             p.liveBasemapDayOffset = 0;
           }
         }
         delete p.weatherMode;
-        // Collapse the old per-overlay on-booleans into a single `activeOverlay`.
-        if (!("activeOverlay" in p)) {
-          let active: OverlayKind | null = null;
-          if (p.weatherOn === true) active = "clouds";
-          else if (p.railwayOn === true) active = "rail";
-          else if (p.firesOn === true) active = "fires";
-          else if (p.ndviOn === true) active = "ndvi";
-          p.activeOverlay = active;
+        // Pre-activeOverlay shape: per-overlay booleans. Map them onto
+        // railOn/ndviOn (the only survivors after v19).
+        if (!("activeOverlay" in p) && version < 19) {
+          if (p.railwayOn === true) p.railOn = true;
+          if (p.ndviOn === undefined) p.ndviOn = false;
         }
         delete p.weatherOn;
         delete p.railwayOn;
         delete p.firesOn;
-        delete p.ndviOn;
-        if (typeof p.weatherOpacity !== "number") p.weatherOpacity = 0.8;
         if (typeof p.railwayOpacity !== "number") p.railwayOpacity = 0.85;
-        if (typeof p.firesOpacity !== "number") p.firesOpacity = 0.9;
         if (typeof p.ndviOpacity !== "number") p.ndviOpacity = 0.7;
         if (p.railStyle !== "tiles" && p.railStyle !== "lines") p.railStyle = "lines";
         // v6 → v7: split single basemapId into image/vector slots + mode.
@@ -363,6 +353,8 @@ export const useSettings = create<Settings>()(
         ) {
           p.basemapMode = "photo";
         }
+        if (typeof p.railOn !== "boolean") p.railOn = false;
+        if (typeof p.ndviOn !== "boolean") p.ndviOn = false;
         return p;
       },
     },

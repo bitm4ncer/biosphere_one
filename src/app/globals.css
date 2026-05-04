@@ -379,15 +379,24 @@ body {
 }
 
 /* ── In-sheet tab row (replaces the old floating bottom-nav) ────────── */
+/* Always shown when the drawer is expanded. Previously gated to mobile
+   only, which left desktop users unable to navigate to the Biosphere
+   or History panes — the desktop side-handle column only exposes Map
+   Controls + Routes. With the tabs always available, both panes are
+   reachable on every viewport. */
 .hud-sheet-tabs {
-  display: none;
+  display: flex;
   gap: 8px;
   padding: 0 14px 6px;
   flex-shrink: 0;
 }
 
-@media (max-width: 767px) {
-  .hud-sheet-tabs { display: flex; }
+/* Desktop: hide the tab row while the drawer is collapsed off-screen.
+   Otherwise the leftmost tab bleeds into the visible 34 px stub. */
+@media (min-width: 768px) {
+  .hud-bottom-sheet[data-sheet-state="peek"] .hud-sheet-tabs {
+    display: none;
+  }
 }
 
 .hud-sheet-tab {

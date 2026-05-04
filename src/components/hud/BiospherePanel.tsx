@@ -9,6 +9,12 @@ interface SpeciesTaxonOption {
 }
 
 interface BiospherePanelProps {
+  // NDVI (NASA GIBS · MODIS Terra 8-day)
+  ndviOn: boolean;
+  ndviOpacity: number;
+  onNdviOnChange: (on: boolean) => void;
+  onNdviOpacityChange: (o: number) => void;
+
   // Species (GBIF)
   speciesOn: boolean;
   speciesOpacity: number;
@@ -66,6 +72,12 @@ interface SwatchSpec {
 
 const SPECIES_GRADIENT =
   "linear-gradient(to right, #fde047, #fb923c, #ef4444, #7f1d1d)";
+
+// NDVI is a vegetation-index ramp from bare/water to dense canopy. The
+// MODIS palette runs warm-to-green; we approximate it with a CSS ramp
+// matching the dominant tones at the breakpoints.
+const NDVI_GRADIENT =
+  "linear-gradient(to right, #c89674, #f6d75c, #b9d860, #5fa83a, #1f5e1f)";
 
 // Forest Loss legends adapt to whichever GFW product resolved.
 const FOREST_LOSS_LEGENDS: Record<string, LegendSpec> = {
@@ -144,6 +156,23 @@ export function BiospherePanel(props: BiospherePanelProps) {
         caption="ESA WorldCover 2021 · 10 m · global · 11 classes incl. cropland"
         status={null}
         swatches={LAND_COVER_SWATCHES}
+      />
+
+      <BiosphereLayerCard
+        label="NDVI"
+        on={props.ndviOn}
+        opacity={props.ndviOpacity}
+        onToggle={props.onNdviOnChange}
+        onOpacityChange={props.onNdviOpacityChange}
+        caption="Vegetation greenness · MODIS Terra · 8-day · 1 km · global"
+        status={props.ndviOn ? "NASA GIBS · MODIS_Terra_NDVI_8Day" : null}
+        legend={{
+          gradient: NDVI_GRADIENT,
+          minLabel: "bare / water",
+          midLabel: "moderate",
+          maxLabel: "dense canopy",
+          unit: "NDVI",
+        }}
       />
 
       <BiosphereLayerCard

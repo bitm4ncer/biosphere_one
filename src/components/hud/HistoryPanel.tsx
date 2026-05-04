@@ -62,8 +62,26 @@ function OnOffRow({
 }
 
 export function HistoryPanel(props: HistoryPanelProps) {
+  // The Year slider is meaningful whenever any history layer is on:
+  // it filters the OHM timeline-map AND the inception year of Landmark
+  // dots. Surfacing it only when Timeline-Map was on (the previous
+  // shape) silently filtered Landmarks via a stale persisted year with
+  // no UI affordance to recover. Now both gates feed the same control.
+  const showYearSlider = props.mapOn || props.landmarksOn;
   return (
     <div className="flex flex-col gap-3">
+      {showYearSlider && (
+        <HudPanel label="Year">
+          <HistoryTimeline
+            year={props.year}
+            onYearChange={props.onYearChange}
+            earliestVisibleYear={props.earliestVisibleYear}
+            visibleCount={props.visibleCount}
+            loading={props.loading}
+          />
+        </HudPanel>
+      )}
+
       <HudPanel label="Timeline Map">
         <div className="flex flex-col gap-2">
           <OnOffRow
@@ -72,20 +90,11 @@ export function HistoryPanel(props: HistoryPanelProps) {
             onChange={props.onMapOnChange}
           />
 
-          {props.mapOn && (
-            <HistoryTimeline
-              year={props.year}
-              onYearChange={props.onYearChange}
-              earliestVisibleYear={props.earliestVisibleYear}
-              visibleCount={props.visibleCount}
-              loading={props.loading}
-            />
-          )}
-
           <p className="text-[10px] leading-snug text-[color:var(--hud-text-muted)]">
             Replaces the basemap with OpenHistoricalMap&apos;s sepia
-            historical style for the chosen year. Drag the slider to
-            travel through time. Off restores your normal basemap.
+            historical style for the chosen year. Drag the Year slider
+            above to travel through time. Off restores your normal
+            basemap.
           </p>
         </div>
       </HudPanel>
@@ -129,9 +138,9 @@ export function HistoryPanel(props: HistoryPanelProps) {
             dated, links to Wikipedia){" "}
             <span style={{ color: "#22d3ee" }}>●</span> OpenStreetMap{" "}
             <span className="hud-mono">historic=*</span> (castles, ruins,
-            archaeological sites, monuments &amp; battlefields). When the
-            Timeline Map is on, the year slider also filters these. Tap a
-            marker for a Wikipedia summary.
+            archaeological sites, monuments &amp; battlefields). The
+            Year slider filters dot inception years. Tap a marker for a
+            Wikipedia summary.
           </p>
         </div>
       </HudPanel>

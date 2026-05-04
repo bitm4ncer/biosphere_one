@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import maplibregl, { Map as MLMap, ScaleControl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
@@ -16,7 +16,6 @@ import {
   useSettings,
   type BasemapMode,
   type OrientationMode,
-  type OverlayKind,
 } from "@/lib/settings";
 import { getAccessToken } from "@/lib/sentinel/auth";
 import { fetchDayOverlay } from "@/lib/sentinel/latest-overlay";
@@ -41,7 +40,6 @@ import { OrientationControl } from "./OrientationControl";
 import { bearingAlongRoute } from "@/lib/orientation";
 import { HudPanel } from "./hud/HudPanel";
 import { SidebarToggle } from "./SidebarToggle";
-import { HikingToggle } from "./HikingToggle";
 import { HikingPanel } from "./hud/HikingPanel";
 import { BiospherePanel } from "./hud/BiospherePanel";
 import { HistoryPanel } from "./hud/HistoryPanel";
@@ -64,24 +62,14 @@ import {
 } from "@/lib/history/basemap";
 import { useHikingLayers } from "./hiking/useHikingLayers";
 
-// Live precipitation (NASA GPM IMERG). Frames are 30-min apart with
-// a ~4 h delivery lag; we probe to find the actual youngest available
-// frame and animate 13 frames (~6 h history) ending there.
-const CLOUDS_ANIM_INTERVAL_MS = 500;
-const CLOUDS_REFRESH_MS = 5 * 60 * 1000;
-
 const OVERLAY_SOURCE_ID = "timeline-overlay";
 const OVERLAY_LAYER_ID = "timeline-overlay-layer";
 const SECTOR_SOURCE_ID = "timeline-sector";
 const SECTOR_LAYER_ID = "timeline-sector-outline";
 const TIMELINE_DAYS_BACK = 365;
-const WEATHER_SOURCE_ID = "weather";
-const WEATHER_LAYER_ID = "weather-layer";
 const MIN_FETCH_ZOOM = 8;
 const RAILWAY_SOURCE_ID = "railway";
 const RAILWAY_LAYER_ID = "railway-layer";
-const FIRES_SOURCE_ID = "fires";
-const FIRES_LAYER_ID = "fires-layer";
 const NDVI_SOURCE_ID = "ndvi";
 const NDVI_LAYER_ID = "ndvi-layer";
 const SPECIES_SOURCE_ID = "biosphere-species";
@@ -198,49 +186,6 @@ function removeHybridOverlay(map: MLMap) {
   if (map.getSource(HYBRID_REFERENCE_SOURCE_ID)) map.removeSource(HYBRID_REFERENCE_SOURCE_ID);
   if (map.getLayer(HYBRID_TRANSPORT_LAYER_ID)) map.removeLayer(HYBRID_TRANSPORT_LAYER_ID);
   if (map.getSource(HYBRID_TRANSPORT_SOURCE_ID)) map.removeSource(HYBRID_TRANSPORT_SOURCE_ID);
-}
-
-// NASA GIBS IMERG global precipitation tile matrix
-// `GoogleMapsCompatible_Level6` covers z 0-6. MapLibre overzooms past
-// z=6 to keep the layer visible higher.
-const WEATHER_MAXZOOM = 6;
-const WEATHER_TILE_SIZE = 256;
-
-function ensureWeatherLayer(map: MLMap, urls: string[], opacity: number) {
-  if (map.getLayer(WEATHER_LAYER_ID)) return;
-  if (map.getSource(WEATHER_SOURCE_ID)) map.removeSource(WEATHER_SOURCE_ID);
-  map.addSource(WEATHER_SOURCE_ID, {
-    type: "raster",
-    tiles: urls,
-    tileSize: WEATHER_TILE_SIZE,
-    maxzoom: WEATHER_MAXZOOM,
-    attribution:
-      '<a href="https://gpm.nasa.gov/data/imerg" target="_blank" rel="noreferrer">NASA GPM IMERG</a> · global precipitation · 30-min',
-  });
-  map.addLayer({
-    id: WEATHER_LAYER_ID,
-    type: "raster",
-    source: WEATHER_SOURCE_ID,
-    paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
-  });
-}
-
-function updateWeatherTiles(map: MLMap, urls: string[]) {
-  const source = map.getSource(WEATHER_SOURCE_ID) as unknown as
-    | { setTiles?: (tiles: string[]) => void }
-    | undefined;
-  if (source?.setTiles) source.setTiles(urls);
-}
-
-function updateWeatherOpacity(map: MLMap, opacity: number) {
-  if (map.getLayer(WEATHER_LAYER_ID)) {
-    map.setPaintProperty(WEATHER_LAYER_ID, "raster-opacity", opacity);
-  }
-}
-
-function removeWeatherLayer(map: MLMap) {
-  if (map.getLayer(WEATHER_LAYER_ID)) map.removeLayer(WEATHER_LAYER_ID);
-  if (map.getSource(WEATHER_SOURCE_ID)) map.removeSource(WEATHER_SOURCE_ID);
 }
 
 function ensureRailwayLayer(map: MLMap, opacity: number) {
@@ -859,44 +804,12 @@ function removeGibsOverlay(map: MLMap, sourceId: string, layerId: string) {
   if (map.getSource(sourceId)) map.removeSource(sourceId);
 }
 
-const FIRES_ATTRIBUTION =
-  '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · VIIRS NOAA-20 Thermal Anomalies (375 m, daily, global)';
-
 const NDVI_ATTRIBUTION =
   '<a href="https://earthdata.nasa.gov/gibs" target="_blank" rel="noreferrer">NASA GIBS</a> · MODIS Terra NDVI 8-day';
 
-// VIIRS NOAA-20 Thermal Anomalies — daily, global, no key. Replaces the
-// old GOES-East/West FireTemp pair which was broken (URL missing TIME
-// segment) and limited to the Americas. VIIRS gives daily coverage of
-// every fire on the planet, including Europe / Africa / Asia.
-const FIRES_MAX_ZOOM = 9;
-
-// VIIRS Thermal Anomalies have variable GIBS processing latency — often
-// 1 day, sometimes 3-5 if a satellite pass missed processing. The
-// NOAA-20 product also has periodic outages where multiple consecutive
-// days return 400. We probe a fallback chain of layers (newest first),
-// each across days 1..7, picking the first {layer, date} pair that
-// returns a 200. Result is cached at module level for the page lifetime.
-const FIRES_LAYER_CANDIDATES = [
-  "VIIRS_NOAA20_Thermal_Anomalies_375m_All",
-  "VIIRS_SNPP_Thermal_Anomalies_375m_All",
-  "MODIS_Terra_Thermal_Anomalies_All",
-  "MODIS_Aqua_Thermal_Anomalies_All",
-] as const;
-const FIRES_PROBE_TILE = { z: 2, x: 2, y: 1 }; // covers Africa+Europe
-
-interface FiresProbe {
-  layer: string;
-  date: string;
-}
-let firesProbed: FiresProbe | null = null;
-let firesProbeInFlight: Promise<FiresProbe | null> | null = null;
-let firesLastProbedUrl: string | null = null;
-
-function firesProbeUrl(layer: string, date: string): string {
-  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${date}/GoogleMapsCompatible_Level9/${FIRES_PROBE_TILE.z}/${FIRES_PROBE_TILE.y}/${FIRES_PROBE_TILE.x}.png`;
-}
-
+// Generic 200-or-not probe used by every Biosphere data-source resolver
+// (Forest Loss, NO₂, Natura) to walk a candidate list of slugs/layers
+// and pick the first reachable one.
 async function probeUrl(url: string, timeoutMs = 8000): Promise<boolean> {
   try {
     const ctrl = new AbortController();
@@ -909,176 +822,13 @@ async function probeUrl(url: string, timeoutMs = 8000): Promise<boolean> {
   }
 }
 
-async function findLatestFiresSource(): Promise<FiresProbe | null> {
-  if (firesProbed) return firesProbed;
-  if (firesProbeInFlight) return firesProbeInFlight;
-  firesProbeInFlight = (async () => {
-    for (const layer of FIRES_LAYER_CANDIDATES) {
-      for (let daysBack = 1; daysBack <= 7; daysBack++) {
-        const date = gibsDateNDaysAgo(daysBack);
-        const url = firesProbeUrl(layer, date);
-        firesLastProbedUrl = url;
-        if (await probeUrl(url)) {
-          firesProbed = { layer, date };
-          return firesProbed;
-        }
-      }
-    }
-    return null;
-  })();
-  try {
-    return await firesProbeInFlight;
-  } finally {
-    firesProbeInFlight = null;
-  }
-}
-
-function getLastProbedFiresUrl(): string | null {
-  return firesLastProbedUrl;
-}
-
-function firesTileUrl(layer: string, date: string): string {
-  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`;
-}
-
-// IMERG probe: find the youngest 30-min boundary that GIBS has actually
-// published. The advertised lag is 4h but real-world delivery varies
-// between 3h and 9h depending on the satellite passes and processing
-// queue. Probing avoids the "first frame is empty until you drag the
-// slider" symptom — every frame in the generated array is guaranteed
-// to be a 200-returning timestamp.
-//
-// We also probe multiple (endpoint, layer, matrix) candidates because
-// GIBS publishes IMERG on different paths than the rest of its catalog
-// and the exact slug isn't well documented for client-side use.
-const IMERG_PROBE_TILE = { z: 2, x: 2, y: 1 }; // covers Africa+Europe
-
-interface ImergSource {
-  endpoint: "epsg3857" | "epsg4326";
-  layer: string;
-  matrix: string;
-}
-const IMERG_SOURCE_CANDIDATES: ImergSource[] = [
-  { endpoint: "epsg3857", layer: "IMERG_Precipitation_Rate", matrix: "GoogleMapsCompatible_Level6" },
-  { endpoint: "epsg3857", layer: "IMERG_Precipitation_Rate", matrix: "GoogleMapsCompatible_Level5" },
-  { endpoint: "epsg3857", layer: "GPM_3IMERGHH_Precipitation_Rate", matrix: "GoogleMapsCompatible_Level6" },
-  // IMERG may live only on epsg4326 — keep MapLibre in EPSG:3857 but
-  // we'll proxy through a custom source if this is what works.
-  { endpoint: "epsg4326", layer: "IMERG_Precipitation_Rate", matrix: "2km" },
-];
-
-interface ImergProbe {
-  isoTime: string;
-  time: number; // epoch seconds
-  source: ImergSource;
-}
-let imergProbed: { at: number; result: ImergProbe | null } | null = null;
-let imergProbeInFlight: Promise<ImergProbe | null> | null = null;
-let imergLastProbedUrl: string | null = null;
-const IMERG_PROBE_TTL_MS = 5 * 60 * 1000;
-
-function imergSourceTileUrl(source: ImergSource, time: string): string {
-  return `https://gibs.earthdata.nasa.gov/wmts/${source.endpoint}/best/${source.layer}/default/${time}/${source.matrix}/{z}/{y}/{x}.png`;
-}
-
-function imergProbeUrl(source: ImergSource, time: string): string {
-  return imergSourceTileUrl(source, time).replace(
-    "{z}/{y}/{x}",
-    `${IMERG_PROBE_TILE.z}/${IMERG_PROBE_TILE.y}/${IMERG_PROBE_TILE.x}`,
-  );
-}
-
-function alignToHalfHour(d: Date): Date {
-  const out = new Date(d);
-  out.setUTCMinutes(out.getUTCMinutes() < 30 ? 0 : 30);
-  out.setUTCSeconds(0);
-  out.setUTCMilliseconds(0);
-  return out;
-}
-
-async function findLatestImergFrame(): Promise<ImergProbe | null> {
-  // Use a 5-min TTL on the probe result so subsequent overlay toggles
-  // don't re-probe, but a long-running session eventually picks up
-  // newly-published frames as time moves forward.
-  if (imergProbed && Date.now() - imergProbed.at < IMERG_PROBE_TTL_MS) {
-    return imergProbed.result;
-  }
-  if (imergProbeInFlight) return imergProbeInFlight;
-  imergProbeInFlight = (async () => {
-    // For each source candidate, walk backwards from 2h ago to 12h ago
-    // in 30-min steps. First (source, time) pair that returns 200 wins.
-    for (const source of IMERG_SOURCE_CANDIDATES) {
-      for (let lagMin = 120; lagMin <= 720; lagMin += 30) {
-        const t = alignToHalfHour(new Date(Date.now() - lagMin * 60_000));
-        const isoTime = t.toISOString().slice(0, 19) + "Z";
-        const url = imergProbeUrl(source, isoTime);
-        imergLastProbedUrl = url;
-        if (await probeUrl(url)) {
-          const result = {
-            isoTime,
-            time: Math.floor(t.getTime() / 1000),
-            source,
-          };
-          imergProbed = { at: Date.now(), result };
-          return result;
-        }
-      }
-    }
-    imergProbed = { at: Date.now(), result: null };
-    return null;
-  })();
-  try {
-    return await imergProbeInFlight;
-  } finally {
-    imergProbeInFlight = null;
-  }
-}
-
-function getLastProbedImergUrl(): string | null {
-  return imergLastProbedUrl;
-}
-
-function ensureFiresLayer(
-  map: MLMap,
-  opacity: number,
-  layer: string,
-  date: string,
-) {
-  if (map.getLayer(FIRES_LAYER_ID)) return;
-  if (map.getSource(FIRES_SOURCE_ID)) map.removeSource(FIRES_SOURCE_ID);
-  map.addSource(FIRES_SOURCE_ID, {
-    type: "raster",
-    tiles: [firesTileUrl(layer, date)],
-    tileSize: 256,
-    maxzoom: FIRES_MAX_ZOOM,
-    attribution: FIRES_ATTRIBUTION,
-  });
-  map.addLayer({
-    id: FIRES_LAYER_ID,
-    type: "raster",
-    source: FIRES_SOURCE_ID,
-    paint: { "raster-opacity": opacity, "raster-fade-duration": 0 },
-  });
-}
-
-function updateFiresOpacity(map: MLMap, opacity: number) {
-  if (map.getLayer(FIRES_LAYER_ID)) {
-    map.setPaintProperty(FIRES_LAYER_ID, "raster-opacity", opacity);
-  }
-}
-
-function removeFiresLayer(map: MLMap) {
-  if (map.getLayer(FIRES_LAYER_ID)) map.removeLayer(FIRES_LAYER_ID);
-  if (map.getSource(FIRES_SOURCE_ID)) map.removeSource(FIRES_SOURCE_ID);
-}
-
 // ── Biosphere panel layers ───────────────────────────────────────────
 //
-// Three independent overlays surfaced through the Biosphere sidebar
-// pane. Each follows the same shape as Fires/NDVI: ensure / update
-// opacity / remove. URLs for Forest Loss and NO₂ are resolved by
-// multi-candidate probes (mirror of `findLatestFiresSource`) because
-// their exact GIBS / GFW slugs aren't well-documented client-side.
+// Independent overlays surfaced through the Biosphere sidebar pane.
+// Each follows the same shape: ensure / update opacity / remove. URLs
+// for Forest Loss and NO₂ are resolved by multi-candidate `probeUrl`
+// chains because their exact GIBS / GFW slugs aren't well-documented
+// client-side.
 
 const SPECIES_ATTRIBUTION =
   '<a href="https://www.gbif.org" target="_blank" rel="noreferrer">GBIF</a> · global biodiversity observations';
@@ -1703,11 +1453,10 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     liveBasemapDayOffset,
     projection,
     orientationMode,
-    activeOverlay,
-    weatherOpacity,
+    railOn,
     railwayOpacity,
     railStyle,
-    firesOpacity,
+    ndviOn,
     ndviOpacity,
     speciesOn,
     speciesOpacity,
@@ -1730,11 +1479,10 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     setBasemapVariant,
     setLiveBasemapDayOffset,
     setProjection,
-    setActiveOverlay,
-    setWeatherOpacity,
+    setRailOn,
     setRailwayOpacity,
     setRailStyle,
-    setFiresOpacity,
+    setNdviOn,
     setNdviOpacity,
     setSpeciesOn,
     setSpeciesOpacity,
@@ -1757,19 +1505,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   // Timeline-Map and Historic Landmarks toggle independently. The
   // year slider is meaningful for both, but the user can run either
   // one without the other.
-  const historyLandmarksActive = historyLandmarksOn;
-  const historyMapActive = historyMapOn;
   // When Time Travel + the historical basemap are on, the OHM style
   // replaces the user's chosen basemap. We thread this through the
   // existing basemap-swap pipeline by reporting OHM as the active id
-  // — every overlay-reapply path (weather, fires, hiking, landmarks…)
+  // — every overlay-reapply path (rail, biosphere, hiking, landmarks…)
   // already keys off `active` via style.load handlers.
-  const active = historyMapActive ? OHM_HISTORICAL_BASEMAP_ID : baseActive;
+  const active = historyMapOn ? OHM_HISTORICAL_BASEMAP_ID : baseActive;
   const activeVariantId = basemapVariants[active];
-  const weatherOn = activeOverlay === "clouds";
-  const railwayOn = activeOverlay === "rail";
-  const firesOn = activeOverlay === "fires";
-  const ndviOn = activeOverlay === "ndvi";
+  const railwayOn = railOn;
   const [view, setView] = useState<ViewState>({
     center: [6.775, 51.2277],
     zoom: 12,
@@ -1780,13 +1523,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   const [overlayUrl, setOverlayUrl] = useState<string | null>(null);
   const [overlayOpacity, setOverlayOpacity] = useState(1);
   const [timelineState, setTimelineState] = useState<TimelineState>({ kind: "idle" });
-  const [weatherFrameIndex, setWeatherFrameIndex] = useState(0);
-  const [weatherPlaying, setWeatherPlaying] = useState(false);
-  // Resolved (layer, date) for Thermal Anomalies after probe. null = not
-  // yet probed, { layer: "", date: "" } sentinel = probe ran but nothing
-  // in the 7-day window of any candidate layer was reachable.
-  const [firesResolved, setFiresResolved] = useState<FiresProbe | null>(null);
-  const [firesProbeFinished, setFiresProbeFinished] = useState(false);
 
   // Biosphere panel — Forest Loss probe + NO₂ probe + Natura probe.
   const [forestLossResolved, setForestLossResolved] = useState<ForestLossSource | null>(null);
@@ -1829,7 +1565,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     const id = window.setInterval(() => setDebugTick((t) => t + 1), 1000);
     return () => window.clearInterval(id);
   }, [debugOn]);
-  const [weatherLoading, setWeatherLoading] = useState(false);
   type SidebarPane = "control" | "hiking" | "biosphere" | "history";
   type SheetState = "peek" | "half" | "full";
   // Active pane is always defined: in peek state the tabs still highlight one.
@@ -2489,137 +2224,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     }
   }, [overlayOpacity]);
 
-  useEffect(() => {
-    if (!weatherOn) {
-      const map = mapRef.current;
-      if (map) removeWeatherLayer(map);
-      setWeatherLoading(false);
-    }
-  }, [weatherOn]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !weatherOn) return;
-    const onSourceData = (e: maplibregl.MapSourceDataEvent) => {
-      if (e.sourceId !== WEATHER_SOURCE_ID) return;
-      const src = map.getSource(WEATHER_SOURCE_ID);
-      if (!src) return;
-      setWeatherLoading(!map.isSourceLoaded(WEATHER_SOURCE_ID));
-    };
-    map.on("sourcedata", onSourceData);
-    map.on("sourcedataloading", onSourceData);
-    return () => {
-      map.off("sourcedata", onSourceData);
-      map.off("sourcedataloading", onSourceData);
-    };
-  }, [weatherOn]);
-
-  // NASA GPM IMERG global precipitation (30-min cadence, ~4 h delivery
-  // lag, free, no auth). Probes once per Clouds-on session to find the
-  // youngest frame GIBS has actually published, then generates 13
-  // frames at 30-min cadence ending there. Re-probes every 5 min so a
-  // long-running session picks up new frames as time advances.
-  const [weatherFramesGen, setWeatherFramesGen] = useState(0);
-  const [imergProbeResult, setImergProbeResult] = useState<ImergProbe | null>(null);
-  const [imergProbeFinished, setImergProbeFinished] = useState(false);
-
-  useEffect(() => {
-    if (!weatherOn) {
-      setImergProbeFinished(false);
-      return;
-    }
-    let cancelled = false;
-    const probe = async () => {
-      const result = await findLatestImergFrame();
-      if (cancelled) return;
-      setImergProbeResult(result);
-      setImergProbeFinished(true);
-    };
-    probe();
-    const id = window.setInterval(() => {
-      probe();
-      setWeatherFramesGen((g) => g + 1);
-    }, CLOUDS_REFRESH_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [weatherOn]);
-
-  interface WeatherFrame {
-    time: number;
-    date: string;
-    urls: string[];
-  }
-
-  const weatherFrames: WeatherFrame[] = useMemo(() => {
-    if (!weatherOn) return [];
-    if (!imergProbeResult) return [];
-    const { source, isoTime: anchor } = imergProbeResult;
-    const youngest = new Date(anchor);
-    const frames: WeatherFrame[] = [];
-    const intervalMin = 30;
-    const count = 13;
-    for (let i = count - 1; i >= 0; i--) {
-      const t = new Date(youngest.getTime() - i * intervalMin * 60_000);
-      const isoTime = t.toISOString().slice(0, 19) + "Z";
-      frames.push({
-        time: Math.floor(t.getTime() / 1000),
-        date: isoTime,
-        urls: [imergSourceTileUrl(source, isoTime)],
-      });
-    }
-    return frames;
-    // weatherFramesGen ticks each refresh interval to regenerate URLs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weatherOn, imergProbeResult, weatherFramesGen]);
-
-  // Whether the cloud overlay is active. RainViewer-era state stayed as
-  // a "satellite" / "radar" switch; we now always show satellite-derived
-  // cloud cover, so the kind is constant. Kept for the OverlayPanel /
-  // DebugHud props to avoid wider refactors.
-  const weatherSourceKind: "satellite" | "radar" = "satellite";
-  const weatherManifestError: string | null = null;
-
-  // When fresh frames arrive (first load or 5-min refresh), snap the
-  // playhead to the most-recent frame so the user always sees "now".
-  useEffect(() => {
-    if (weatherFrames.length === 0) return;
-    setWeatherFrameIndex(weatherFrames.length - 1);
-  }, [weatherFrames.length, weatherFramesGen]);
-
-  useEffect(() => {
-    if (!weatherOn || !weatherPlaying || weatherFrames.length === 0) return;
-    const id = setInterval(() => {
-      setWeatherFrameIndex((i) => (i + 1) % weatherFrames.length);
-    }, CLOUDS_ANIM_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [weatherOn, weatherPlaying, weatherFrames.length]);
-
-  const currentWeatherUrls = weatherFrames[weatherFrameIndex]?.urls;
-  const weatherUrlsKey = currentWeatherUrls?.join("|") ?? "";
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !weatherOn || !currentWeatherUrls) return;
-    const apply = () => {
-      ensureWeatherLayer(map, currentWeatherUrls, weatherOpacity);
-      updateWeatherTiles(map, currentWeatherUrls);
-    };
-    if (map.isStyleLoaded()) apply();
-    map.on("style.load", apply);
-    return () => {
-      map.off("style.load", apply);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weatherOn, active, weatherUrlsKey]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !weatherOn) return;
-    updateWeatherOpacity(map, weatherOpacity);
-  }, [weatherOn, weatherOpacity]);
-
   // Raster OpenRailwayMap overlay (rail + railStyle === "tiles")
   useEffect(() => {
     const map = mapRef.current;
@@ -2848,54 +2452,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     updateRailLinesOpacity(map, railwayOpacity);
   }, [railwayOn, railStyle, railwayOpacity]);
 
-  useEffect(() => {
-    if (!firesOn) {
-      const map = mapRef.current;
-      if (map) removeFiresLayer(map);
-    }
-  }, [firesOn]);
-
-  // Probe for the latest available Thermal Anomalies (layer, date) on
-  // first Fires toggle. Cached at module level so subsequent toggles
-  // skip the probe.
-  useEffect(() => {
-    if (!firesOn) return;
-    if (firesProbeFinished) return;
-    let cancelled = false;
-    findLatestFiresSource().then((found) => {
-      if (cancelled) return;
-      setFiresResolved(found);
-      setFiresProbeFinished(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [firesOn, firesProbeFinished]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !firesOn) return;
-    if (!firesResolved) return; // wait for probe
-    const { layer, date } = firesResolved;
-    const apply = () => ensureFiresLayer(map, firesOpacity, layer, date);
-    if (map.isStyleLoaded()) {
-      apply();
-    } else {
-      map.once("style.load", apply);
-    }
-    map.on("style.load", apply);
-    return () => {
-      map.off("style.load", apply);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firesOn, active, firesResolved]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !firesOn) return;
-    updateFiresOpacity(map, firesOpacity);
-  }, [firesOn, firesOpacity]);
-
   // ── Biosphere · Species (GBIF) ────────────────────────────────────
   useEffect(() => {
     if (!speciesOn) {
@@ -2917,7 +2473,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       }
       // Stack below Fires so fire dots remain readable, above NO₂.
       const beforeId = firstExistingLayerId(map, [
-        FIRES_LAYER_ID,
         OVERLAY_LAYER_ID,
       ]);
       ensureSpeciesLayer(map, speciesOpacity, speciesTaxonKey, beforeId);
@@ -2971,7 +2526,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       // Stack below Species so observation dots stay legible.
       const beforeId = firstExistingLayerId(map, [
         SPECIES_LAYER_ID,
-        FIRES_LAYER_ID,
         OVERLAY_LAYER_ID,
       ]);
       ensureForestLossLayer(map, forestLossOpacity, slug, beforeId);
@@ -2997,7 +2551,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   // ── History · landmarks ──────────────────────────────────────────
   // Toggle off → wipe everything: layer + cached visible state + popup.
   useEffect(() => {
-    if (!historyLandmarksActive) {
+    if (!historyLandmarksOn) {
       const map = mapRef.current;
       if (map) removeHistoryLandmarksLayer(map);
       historyPopupRef.current?.remove();
@@ -3005,14 +2559,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       setHistoryVisibleCount(0);
       setHistoryEarliestYear(null);
     }
-  }, [historyLandmarksActive]);
+  }, [historyLandmarksOn]);
 
   // Toggle on / pan / zoom → ensure layer, render cached features
   // immediately, fetch missing tiles in the background, click handler
   // for the Wikipedia popup.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !historyLandmarksActive) return;
+    if (!map || !historyLandmarksOn) return;
     let cancelled = false;
     let pendingFetch: AbortController | null = null;
 
@@ -3180,20 +2734,20 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       map.off("mouseleave", HISTORY_LANDMARKS_HIT_LAYER_ID, onLeave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyLandmarksActive, active]);
+  }, [historyLandmarksOn, active]);
 
   // Slider drag → no refetch, just `setFilter`. Cheap.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !historyLandmarksActive) return;
+    if (!map || !historyLandmarksOn) return;
     applyHistoryLandmarksFilter(map, historyYear);
-  }, [historyLandmarksActive, historyYear]);
+  }, [historyLandmarksOn, historyYear]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !historyLandmarksActive) return;
+    if (!map || !historyLandmarksOn) return;
     applyHistoryLandmarksOpacity(map, historyLandmarksOpacity);
-  }, [historyLandmarksActive, historyLandmarksOpacity]);
+  }, [historyLandmarksOn, historyLandmarksOpacity]);
 
   // ── History · OHM date filter ────────────────────────────────────
   // The basemap swap to OHM is handled by the main basemap-apply
@@ -3203,7 +2757,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   // switches between OHM and a regular basemap) and on year drag.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !historyMapActive) return;
+    if (!map || !historyMapOn) return;
     const apply = () => applyOhmDate(map, historyYear);
     if (map.isStyleLoaded()) apply();
     else map.once("styledata", apply);
@@ -3211,7 +2765,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     return () => {
       map.off("styledata", apply);
     };
-  }, [historyMapActive, historyYear]);
+  }, [historyMapOn, historyYear]);
 
   // ── Biosphere · NO₂ (NASA OMI / Sentinel-5P) ──────────────────────
   useEffect(() => {
@@ -3246,7 +2800,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       const beforeId = firstExistingLayerId(map, [
         FOREST_LOSS_LAYER_ID,
         SPECIES_LAYER_ID,
-        FIRES_LAYER_ID,
         OVERLAY_LAYER_ID,
       ]);
       ensureNo2Layer(map, no2Opacity, source, beforeId);
@@ -3302,7 +2855,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       const beforeId = firstExistingLayerId(map, [
         FOREST_LOSS_LAYER_ID,
         SPECIES_LAYER_ID,
-        FIRES_LAYER_ID,
         OVERLAY_LAYER_ID,
       ]);
       ensureNaturaLayer(map, naturaSitesOpacity, source, beforeId);
@@ -3344,7 +2896,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
         NO2_LAYER_ID,
         FOREST_LOSS_LAYER_ID,
         SPECIES_LAYER_ID,
-        FIRES_LAYER_ID,
         OVERLAY_LAYER_ID,
       ]);
       ensureLandCoverLayer(map, landCoverOpacity, beforeId);
@@ -3576,24 +3127,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   }, [flyTarget]);
 
 
-  const overlayOpacityForActive =
-    activeOverlay === "clouds"
-      ? weatherOpacity
-      : activeOverlay === "rail"
-        ? railwayOpacity
-        : activeOverlay === "fires"
-          ? firesOpacity
-          : activeOverlay === "ndvi"
-            ? ndviOpacity
-            : 1;
-
-  const setOverlayOpacityForActive = (o: number) => {
-    if (activeOverlay === "clouds") setWeatherOpacity(o);
-    else if (activeOverlay === "rail") setRailwayOpacity(o);
-    else if (activeOverlay === "fires") setFiresOpacity(o);
-    else if (activeOverlay === "ndvi") setNdviOpacity(o);
-  };
-
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
@@ -3700,15 +3233,15 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             : "md:translate-x-[calc(100%-34px)]",
         ].join(" ")}
       >
-        {/* Side handles — desktop only */}
+        {/* Drawer pull tab — desktop only. Single chevron that opens
+            and closes the entire drawer; pane navigation lives in the
+            in-sheet tabs below so all four panes are reachable. */}
         <div className="hud-side-handles absolute -left-[34px] top-4 flex shrink-0 flex-col items-start gap-2">
           <SidebarToggle
-            open={activePane === "control" && sidebarOpen}
-            onToggle={() => selectPane("control")}
-          />
-          <HikingToggle
-            open={activePane === "hiking" && sidebarOpen}
-            onToggle={() => selectPane("hiking")}
+            open={sidebarOpen}
+            onToggle={() =>
+              setSheetState((s) => (s === "peek" ? preferredOpen : "peek"))
+            }
           />
         </div>
 
@@ -3924,6 +3457,10 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               />
             ) : activePane === "biosphere" ? (
               <BiospherePanel
+                ndviOn={ndviOn}
+                ndviOpacity={ndviOpacity}
+                onNdviOnChange={setNdviOn}
+                onNdviOpacityChange={setNdviOpacity}
                 speciesOn={speciesOn}
                 speciesOpacity={speciesOpacity}
                 speciesTaxonKey={speciesTaxonKey}
@@ -3980,24 +3517,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                   }}
                 />
 
-                <OverlayPanel
-                  active={activeOverlay}
-                  onChange={setActiveOverlay}
-                  opacity={overlayOpacityForActive}
-                  onOpacityChange={setOverlayOpacityForActive}
+                <RailsPanel
+                  on={railOn}
+                  onChange={setRailOn}
+                  opacity={railwayOpacity}
+                  onOpacityChange={setRailwayOpacity}
                   railStyle={railStyle}
                   onRailStyleChange={setRailStyle}
                   railNetworkStatus={railNetworkStatus}
-                  weatherProps={{
-                    frames: weatherFrames,
-                    frameIndex: weatherFrameIndex,
-                    onFrameIndex: setWeatherFrameIndex,
-                    isPlaying: weatherPlaying,
-                    onPlayingChange: setWeatherPlaying,
-                    loading: weatherLoading,
-                    error: weatherManifestError,
-                    sourceKind: weatherSourceKind,
-                  }}
                 />
 
                 <TimelinePanel
@@ -4051,26 +3578,8 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
         <DebugHud
           tick={debugTick}
           mapRef={mapRef}
-          activeOverlay={activeOverlay}
-          weatherOn={weatherOn}
-          firesOn={firesOn}
+          railOn={railOn}
           ndviOn={ndviOn}
-          railwayOn={railwayOn}
-          weatherFramesCount={weatherFrames.length}
-          weatherManifestError={weatherManifestError}
-          weatherManifestLoaded={weatherFrames.length > 0}
-          weatherSourceKind={weatherSourceKind}
-          imergProbeFinished={imergProbeFinished}
-          imergProbedIsoTime={imergProbeResult?.isoTime ?? null}
-          imergProbedSource={
-            imergProbeResult
-              ? `${imergProbeResult.source.endpoint}/${imergProbeResult.source.layer}/${imergProbeResult.source.matrix}`
-              : null
-          }
-          imergLastProbedUrl={getLastProbedImergUrl()}
-          firesResolvedLayer={firesResolved?.layer ?? null}
-          firesResolvedDate={firesResolved?.date ?? null}
-          firesProbeFinished={firesProbeFinished}
           speciesOn={speciesOn}
           speciesOpacity={speciesOpacity}
           forestLossOn={forestLossOn}
@@ -4087,7 +3596,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           lastBasemapKey={lastAppliedBasemapKeyRef.current}
           basemapMode={basemapMode}
           imageBasemapId={imageBasemapId}
-          activeOverlayId={active}
+          activeBasemapId={active}
           log={debugLog}
         />
       )}
@@ -4332,92 +3841,69 @@ function BasemapSwitch({ mode, onModeChange }: BasemapSwitchProps) {
   );
 }
 
-interface OverlayPanelProps {
-  active: OverlayKind | null;
-  onChange: (k: OverlayKind | null) => void;
+interface RailsPanelProps {
+  on: boolean;
+  onChange: (on: boolean) => void;
   opacity: number;
   onOpacityChange: (o: number) => void;
   railStyle: "tiles" | "lines";
   onRailStyleChange: (s: "tiles" | "lines") => void;
   railNetworkStatus: RailNetworkStatus;
-  weatherProps: {
-    frames: { time: number; date: string; urls: string[] }[];
-    frameIndex: number;
-    onFrameIndex: (i: number) => void;
-    isPlaying: boolean;
-    onPlayingChange: (p: boolean) => void;
-    loading: boolean;
-    error: string | null;
-    sourceKind: "satellite" | "radar";
-  };
 }
 
-function OverlayPanel({
-  active,
+function RailsPanel({
+  on,
   onChange,
   opacity,
   onOpacityChange,
   railStyle,
   onRailStyleChange,
   railNetworkStatus,
-  weatherProps,
-}: OverlayPanelProps) {
-  const tabs: { key: OverlayKind | null; label: string }[] = [
-    { key: null, label: "Off" },
-    { key: "clouds", label: "Clouds" },
-    { key: "rail", label: "Rail" },
-    { key: "fires", label: "Fires" },
-    { key: "ndvi", label: "NDVI" },
-  ];
-
-  const railLineCaption = (() => {
-    const cooldownLeft = Math.max(
-      0,
-      Math.ceil((railNetworkStatus.cooldownUntil - Date.now()) / 1000),
-    );
-    if (cooldownLeft > 0) {
-      return `Overpass throttled · retrying in ${cooldownLeft}s`;
-    }
-    if (railNetworkStatus.inFlight > 0) {
-      return `Loading rails… (${railNetworkStatus.inFlight} tile${railNetworkStatus.inFlight === 1 ? "" : "s"})`;
-    }
-    return "OSM rail lines · Overpass · cached per tile";
-  })();
+}: RailsPanelProps) {
+  const cooldownLeft = Math.max(
+    0,
+    Math.ceil((railNetworkStatus.cooldownUntil - Date.now()) / 1000),
+  );
+  const railLineCaption =
+    cooldownLeft > 0
+      ? `Overpass throttled · retrying in ${cooldownLeft}s`
+      : railNetworkStatus.inFlight > 0
+        ? `Loading rails… (${railNetworkStatus.inFlight} tile${railNetworkStatus.inFlight === 1 ? "" : "s"})`
+        : "OSM rail lines · Overpass · cached per tile";
 
   const caption =
-    active === "clouds"
-      ? "Live precipitation · GPM IMERG · global · past 6 h"
-      : active === "rail"
-        ? railStyle === "lines"
-          ? railLineCaption
-          : "OpenRailwayMap raster · OSM"
-        : active === "fires"
-          ? "VIIRS NOAA-20 Thermal Anomalies · daily · global"
-          : active === "ndvi"
-            ? "MODIS Terra · 8-day · 1km"
-            : null;
-
-  const f = weatherProps;
-  const currentFrame = f.frames[f.frameIndex];
+    railStyle === "lines" ? railLineCaption : "OpenRailwayMap raster · OSM";
 
   return (
-    <HudPanel label="Overlay">
+    <HudPanel label="Rails">
       <div className="flex flex-col gap-2">
-        <div className="hud-tab-row">
-          {tabs.map((t) => (
-            <button
-              key={String(t.key)}
-              type="button"
-              data-active={active === t.key}
-              className="hud-tab"
-              onClick={() => onChange(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div
+          className="hud-tab-row"
+          style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
+          role="tablist"
+          aria-label="Rail overlay on/off"
+        >
+          <button
+            type="button"
+            className="hud-tab"
+            data-active={!on}
+            aria-pressed={!on}
+            onClick={() => onChange(false)}
+          >
+            Off
+          </button>
+          <button
+            type="button"
+            className="hud-tab"
+            data-active={on}
+            aria-pressed={on}
+            onClick={() => onChange(true)}
+          >
+            On
+          </button>
         </div>
 
-        {active === "rail" && (
+        {on && (
           <div className="flex items-center gap-2">
             <span className="hud-label text-[9px]">Style</span>
             <div
@@ -4444,73 +3930,7 @@ function OverlayPanel({
           </div>
         )}
 
-        {active === "clouds" && f.error && (
-          <p className="max-w-[260px] break-words text-[11px] text-[color:var(--hud-danger)]">
-            Cloud radar unavailable: {f.error}
-          </p>
-        )}
-        {active === "clouds" && !f.error && f.frames.length === 0 && (
-          <p className="max-w-[260px] text-[11px] text-[color:var(--hud-text-muted)]">
-            Loading live cloud frames…
-          </p>
-        )}
-
-        {active === "clouds" && f.frames.length > 0 && currentFrame && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => f.onPlayingChange(!f.isPlaying)}
-                className="hud-btn-ghost"
-                aria-label={f.isPlaying ? "Pause" : "Play"}
-              >
-                {f.isPlaying ? (
-                  <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor">
-                    <rect x="1.5" y="1" width="2" height="8" />
-                    <rect x="6.5" y="1" width="2" height="8" />
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" fill="currentColor">
-                    <path d="M2 1 L9 5 L2 9 Z" />
-                  </svg>
-                )}
-              </button>
-              <input
-                type="range"
-                min={0}
-                max={f.frames.length - 1}
-                step={1}
-                value={f.frameIndex}
-                onChange={(e) => {
-                  f.onPlayingChange(false);
-                  f.onFrameIndex(Number(e.target.value));
-                }}
-                className="hud-slider flex-1"
-                style={{
-                  ["--hud-fill" as string]: `${Math.round((f.frameIndex / Math.max(1, f.frames.length - 1)) * 100)}%`,
-                }}
-              />
-            </div>
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="text-[color:var(--hud-text-muted)]">
-                {(() => {
-                  const ms = currentFrame.time * 1000;
-                  const t = new Date(ms).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  });
-                  return ms > Date.now() ? `${t} +nowcast` : t;
-                })()}
-              </span>
-              <span className="text-[color:var(--hud-text-muted)]">
-                {f.frameIndex + 1}/{f.frames.length}
-                {f.loading && " · loading…"}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {active !== null && (
+        {on && (
           <>
             <div className="flex items-center gap-2">
               <span className="hud-label text-[9px]">Opacity</span>
@@ -4523,30 +3943,28 @@ function OverlayPanel({
                 onChange={(e) => onOpacityChange(Number(e.target.value))}
                 className="hud-slider flex-1"
                 style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
+                aria-label="Rail overlay opacity"
               />
               <span className="hud-mono w-8 text-right text-[10px] text-[color:var(--hud-text-muted)]">
                 {Math.round(opacity * 100)}%
               </span>
             </div>
-            {caption && (
-              <div className="flex items-center gap-1.5 text-[10px] text-[color:var(--hud-text-muted)]">
-                {active === "rail"
-                  && railStyle === "lines"
-                  && (railNetworkStatus.inFlight > 0
-                    || railNetworkStatus.cooldownUntil > Date.now()) && (
-                    <span
-                      aria-hidden
-                      className="hud-loading-dot"
-                      data-state={
-                        railNetworkStatus.cooldownUntil > Date.now()
-                          ? "throttled"
-                          : "loading"
-                      }
-                    />
-                  )}
-                <span>{caption}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 text-[10px] text-[color:var(--hud-text-muted)]">
+              {railStyle === "lines"
+                && (railNetworkStatus.inFlight > 0
+                  || railNetworkStatus.cooldownUntil > Date.now()) && (
+                  <span
+                    aria-hidden
+                    className="hud-loading-dot"
+                    data-state={
+                      railNetworkStatus.cooldownUntil > Date.now()
+                        ? "throttled"
+                        : "loading"
+                    }
+                  />
+                )}
+              <span>{caption}</span>
+            </div>
           </>
         )}
       </div>
@@ -5074,22 +4492,8 @@ function SnapshotCalendar({ snapshots, activeIndex, onSelect }: SnapshotCalendar
 interface DebugHudProps {
   tick: number;
   mapRef: { current: MLMap | null };
-  activeOverlay: OverlayKind | null;
-  weatherOn: boolean;
-  firesOn: boolean;
+  railOn: boolean;
   ndviOn: boolean;
-  railwayOn: boolean;
-  weatherFramesCount: number;
-  weatherManifestError: string | null;
-  weatherManifestLoaded: boolean;
-  weatherSourceKind: "satellite" | "radar";
-  imergProbeFinished: boolean;
-  imergProbedIsoTime: string | null;
-  imergProbedSource: string | null;
-  imergLastProbedUrl: string | null;
-  firesResolvedLayer: string | null;
-  firesResolvedDate: string | null;
-  firesProbeFinished: boolean;
   speciesOn: boolean;
   speciesOpacity: number;
   forestLossOn: boolean;
@@ -5106,29 +4510,15 @@ interface DebugHudProps {
   lastBasemapKey: string | null;
   basemapMode: BasemapMode;
   imageBasemapId: string;
-  activeOverlayId: string;
+  activeBasemapId: string;
   log: string[];
 }
 
 function DebugHud({
   tick,
   mapRef,
-  activeOverlay,
-  weatherOn,
-  firesOn,
+  railOn,
   ndviOn,
-  railwayOn,
-  weatherFramesCount,
-  weatherManifestError,
-  weatherManifestLoaded,
-  weatherSourceKind,
-  imergProbeFinished,
-  imergProbedIsoTime,
-  imergProbedSource,
-  imergLastProbedUrl,
-  firesResolvedLayer,
-  firesResolvedDate,
-  firesProbeFinished,
   speciesOn,
   speciesOpacity,
   forestLossOn,
@@ -5145,7 +4535,7 @@ function DebugHud({
   lastBasemapKey,
   basemapMode,
   imageBasemapId,
-  activeOverlayId,
+  activeBasemapId,
   log,
 }: DebugHudProps) {
   // tick is read so the effect re-runs every second; eslint silenced via use.
@@ -5166,48 +4556,21 @@ function DebugHud({
       // Style not yet ready.
     }
   }
-  const firesLayerOnMap = layerIds.includes("fires-layer");
-  const weatherLayerOnMap = layerIds.includes("weather-layer");
   return (
     <div
       className="pointer-events-auto fixed left-1 right-1 top-[max(64px,env(safe-area-inset-top,0px))] z-[9999] max-h-[55vh] overflow-auto rounded border-2 border-red-500 bg-black/95 p-2 font-mono text-[10px] leading-tight text-amber-100 shadow-2xl"
     >
       <div className="mb-1 font-semibold text-amber-300">DEBUG HUD · ?debug=0 to hide</div>
-      <div>active basemap: {activeOverlayId} (mode={basemapMode}, image={imageBasemapId})</div>
-      <div>activeOverlay: {String(activeOverlay)} · style.loaded: {String(styleLoaded)} · z={zoom}</div>
+      <div>active basemap: {activeBasemapId} (mode={basemapMode}, image={imageBasemapId})</div>
+      <div>style.loaded: {String(styleLoaded)} · z={zoom}</div>
       <div>
-        toggles: clouds={String(weatherOn)} fires={String(firesOn)} rail={String(railwayOn)} ndvi={String(ndviOn)}
-      </div>
-      <div>
-        layer present: fires-layer={String(firesLayerOnMap)} · weather-layer={String(weatherLayerOnMap)}
-      </div>
-      <div>
-        clouds: frames={weatherFramesCount} ·{" "}
-        {!imergProbeFinished
-          ? "(probing IMERG…)"
-          : imergProbedIsoTime && imergProbedSource
-          ? `${imergProbedSource} · ${imergProbedIsoTime}`
-          : "(no candidate returned 200)"}
-        {weatherManifestError ? ` · err=${weatherManifestError}` : ""}
-      </div>
-      {imergLastProbedUrl && (
-        <div className="break-all text-amber-300">
-          last probe: <a href={imergLastProbedUrl} target="_blank" rel="noreferrer" className="underline">{imergLastProbedUrl.slice(-80)}</a>
-        </div>
-      )}
-      <div>
-        fires:{" "}
-        {!firesProbeFinished
-          ? "(probing…)"
-          : firesResolvedLayer && firesResolvedDate
-          ? `${firesResolvedLayer.replace("_Thermal_Anomalies_375m_All", "").replace("_Thermal_Anomalies_All", "")} · ${firesResolvedDate}`
-          : "(no candidate layer/date returned 200)"}
+        toggles: rail={String(railOn)} ndvi={String(ndviOn)}
       </div>
       <div>
         species: on={String(speciesOn)} · opacity={Math.round(speciesOpacity * 100)}% · layer-present={String(layerIds.includes("biosphere-species-layer"))}
       </div>
       <div>
-        forest-loss: on={String(forestLossOn)} ·{" "}
+        forest-loss: on={String(forestLossOn)} · opacity={Math.round(forestLossOpacity * 100)}% ·{" "}
         {!forestLossOn
           ? "—"
           : !forestLossProbeFinished
