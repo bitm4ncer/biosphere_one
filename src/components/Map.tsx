@@ -642,10 +642,13 @@ function ensureHistoryLandmarksLayer(map: MLMap, opacity: number) {
       source: HISTORY_LANDMARKS_SOURCE_ID,
       minzoom: HISTORY_LANDMARKS_MIN_ZOOM,
       paint: {
-        // Hot pink with a thick white stroke — vivid against the
-        // sepia OHM basemap, the dark vector HUD, and satellite
-        // imagery alike. (The previous pastel lavender disappeared on
-        // the parchment-toned timeline basemap.)
+        // Two colours signal data provenance — Wikidata-sourced
+        // features almost always have a verified inception date and
+        // a Wikipedia article (= a useful popup), while OSM-only
+        // features are community-mapped, often dateless (visible
+        // only when the slider is past 2000), and may not link out
+        // anywhere. Both stroked white for legibility on the sepia
+        // OHM basemap, dark vector basemap, and satellite alike.
         "circle-radius": [
           "interpolate",
           ["linear"],
@@ -656,7 +659,12 @@ function ensureHistoryLandmarksLayer(map: MLMap, opacity: number) {
           14, 7,
           17, 8.5,
         ],
-        "circle-color": "#ff2d92",
+        "circle-color": [
+          "match",
+          ["get", "source"],
+          "wikidata", "#ff2d92", // hot pink → Wikidata (dated, named, has article)
+          "#22d3ee",             // cyan      → OSM (community heritage)
+        ],
         "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 1.6,
         "circle-opacity": opacity,

@@ -125,12 +125,13 @@ export function HistoryPanel(props: HistoryPanelProps) {
           )}
 
           <p className="text-[10px] leading-snug text-[color:var(--hud-text-muted)]">
-            Castles, ruins, archaeological sites, monuments &amp;
-            battlefields. OpenStreetMap{" "}
-            <span className="hud-mono">historic=*</span> + Wikidata
-            (any geo-tagged item with an inception date). When the
-            Timeline Map is on, the year slider also filters these.
-            Tap a marker for a Wikipedia summary.
+            <span style={{ color: "#ff2d92" }}>●</span> Wikidata (named,
+            dated, links to Wikipedia){" "}
+            <span style={{ color: "#22d3ee" }}>●</span> OpenStreetMap{" "}
+            <span className="hud-mono">historic=*</span> (castles, ruins,
+            archaeological sites, monuments &amp; battlefields). When the
+            Timeline Map is on, the year slider also filters these. Tap a
+            marker for a Wikipedia summary.
           </p>
         </div>
       </HudPanel>
