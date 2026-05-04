@@ -378,25 +378,19 @@ body {
   }
 }
 
-/* ── In-sheet tab row (replaces the old floating bottom-nav) ────────── */
-/* Always shown when the drawer is expanded. Previously gated to mobile
-   only, which left desktop users unable to navigate to the Biosphere
-   or History panes — the desktop side-handle column only exposes Map
-   Controls + Routes. With the tabs always available, both panes are
-   reachable on every viewport. */
+/* ── In-sheet tab row (mobile-only — replaces the floating bottom-nav).
+   Desktop pane navigation lives in the side-handle column hanging off
+   the left edge of the drawer; rendering tabs at the top of the desktop
+   drawer would overlap the floating top-bar's basemap-mode switch. */
 .hud-sheet-tabs {
-  display: flex;
+  display: none;
   gap: 8px;
   padding: 0 14px 6px;
   flex-shrink: 0;
 }
 
-/* Desktop: hide the tab row while the drawer is collapsed off-screen.
-   Otherwise the leftmost tab bleeds into the visible 34 px stub. */
-@media (min-width: 768px) {
-  .hud-bottom-sheet[data-sheet-state="peek"] .hud-sheet-tabs {
-    display: none;
-  }
+@media (max-width: 767px) {
+  .hud-sheet-tabs { display: flex; }
 }
 
 .hud-sheet-tab {
@@ -781,6 +775,13 @@ input[type="range"].hud-slider::-moz-range-thumb {
   background: var(--hud-accent-soft);
 }
 
+.hud-handle[data-active="true"] {
+  border-color: var(--hud-border-strong);
+  background: var(--hud-accent-soft);
+  color: var(--hud-accent);
+  box-shadow: inset 0 0 0 1px var(--hud-border-strong);
+}
+
 .hud-handle::before {
   content: "";
   position: absolute;
@@ -791,6 +792,10 @@ input[type="range"].hud-slider::-moz-range-thumb {
   background: var(--hud-accent);
   opacity: 0.5;
   box-shadow: 0 0 6px var(--hud-accent-glow);
+}
+
+.hud-handle[data-active="true"]::before {
+  opacity: 1;
 }
 
 /* ── Overlay tab switcher ────────────────────────────────────────────── */

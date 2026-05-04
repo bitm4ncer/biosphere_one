@@ -40,6 +40,7 @@ import { OrientationControl } from "./OrientationControl";
 import { bearingAlongRoute } from "@/lib/orientation";
 import { HudPanel } from "./hud/HudPanel";
 import { SidebarToggle } from "./SidebarToggle";
+import { PaneToggle } from "./PaneToggle";
 import { HikingPanel } from "./hud/HikingPanel";
 import { BiospherePanel } from "./hud/BiospherePanel";
 import { HistoryPanel } from "./hud/HistoryPanel";
@@ -99,6 +100,100 @@ interface ViewState {
   center: [number, number];
   zoom: number;
 }
+
+type SidebarPane = "control" | "hiking" | "biosphere" | "history";
+
+interface PaneSpec {
+  key: SidebarPane;
+  label: string;
+  icon: ReactNode;
+}
+
+// Single source of truth for the four sidebar panes. Used by both the
+// desktop side-handle column and the mobile sheet-tabs row, so a new
+// pane only needs to be added in one place.
+const SIDEBAR_PANES: PaneSpec[] = [
+  {
+    key: "control",
+    label: "Map Controls",
+    icon: (
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        aria-hidden
+      >
+        <circle cx="8" cy="8" r="6.2" />
+        <ellipse cx="8" cy="8" rx="6.2" ry="2.6" />
+        <ellipse cx="8" cy="8" rx="2.6" ry="6.2" />
+        <line x1="1.8" y1="8" x2="14.2" y2="8" />
+      </svg>
+    ),
+  },
+  {
+    key: "biosphere",
+    label: "Biosphere",
+    icon: (
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M2.5 13.5 C2.5 7.5 7.5 2.5 13.5 2.5 C13.5 8.5 8.5 13.5 2.5 13.5 Z" />
+        <path d="M3.5 12.5 L12.5 3.5" />
+      </svg>
+    ),
+  },
+  {
+    key: "history",
+    label: "History",
+    icon: (
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M4 2 L12 2 L12 5 L8 8 L12 11 L12 14 L4 14 L4 11 L8 8 L4 5 Z" />
+      </svg>
+    ),
+  },
+  {
+    key: "hiking",
+    label: "Routes",
+    icon: (
+      <svg
+        width="22"
+        height="22"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+      >
+        <path d="M5 2 L5 14" />
+        <path d="M5 3 L13 5 L5 7 Z" fill="currentColor" fillOpacity="0.45" />
+      </svg>
+    ),
+  },
+];
 
 type TimelineState =
   | { kind: "idle" }
@@ -1565,7 +1660,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     const id = window.setInterval(() => setDebugTick((t) => t + 1), 1000);
     return () => window.clearInterval(id);
   }, [debugOn]);
-  type SidebarPane = "control" | "hiking" | "biosphere" | "history";
   type SheetState = "peek" | "half" | "full";
   // Active pane is always defined: in peek state the tabs still highlight one.
   const [activePane, setActivePane] = useState<SidebarPane>("control");
@@ -3233,9 +3327,9 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             : "md:translate-x-[calc(100%-34px)]",
         ].join(" ")}
       >
-        {/* Drawer pull tab — desktop only. Single chevron that opens
-            and closes the entire drawer; pane navigation lives in the
-            in-sheet tabs below so all four panes are reachable. */}
+        {/* Side-handle column — desktop only. Top: open/close chevron;
+            below: one PaneToggle per sidebar pane. Mobile uses the
+            sheet-tabs row below instead. */}
         <div className="hud-side-handles absolute -left-[34px] top-4 flex shrink-0 flex-col items-start gap-2">
           <SidebarToggle
             open={sidebarOpen}
@@ -3243,6 +3337,17 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               setSheetState((s) => (s === "peek" ? preferredOpen : "peek"))
             }
           />
+          {SIDEBAR_PANES.map((p) => (
+            <PaneToggle
+              key={p.key}
+              active={activePane === p.key && sidebarOpen}
+              label={p.label}
+              onToggle={() => selectPane(p.key)}
+              variant="handle"
+            >
+              {p.icon}
+            </PaneToggle>
+          ))}
         </div>
 
         {/* Drag handle — mobile, taps cycle peek ↔ half */}
@@ -3253,104 +3358,19 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           className="hud-bottom-sheet-grabber"
         />
 
-        {/* In-sheet tabs — always visible on mobile, hidden on desktop */}
+        {/* In-sheet tabs — mobile only (CSS gates visibility). */}
         <nav className="hud-sheet-tabs" aria-label="Panel switcher">
-          <button
-            type="button"
-            onClick={() => selectPane("control")}
-            data-active={activePane === "control" && sidebarOpen}
-            aria-pressed={activePane === "control" && sidebarOpen}
-            aria-label="Map Controls"
-            className="hud-sheet-tab"
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              aria-hidden
+          {SIDEBAR_PANES.map((p) => (
+            <PaneToggle
+              key={p.key}
+              active={activePane === p.key && sidebarOpen}
+              label={p.label}
+              onToggle={() => selectPane(p.key)}
+              variant="tab"
             >
-              <circle cx="8" cy="8" r="6.2" />
-              <ellipse cx="8" cy="8" rx="6.2" ry="2.6" />
-              <ellipse cx="8" cy="8" rx="2.6" ry="6.2" />
-              <line x1="1.8" y1="8" x2="14.2" y2="8" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => selectPane("biosphere")}
-            data-active={activePane === "biosphere" && sidebarOpen}
-            aria-pressed={activePane === "biosphere" && sidebarOpen}
-            aria-label="Biosphere"
-            className="hud-sheet-tab"
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M2.5 13.5 C2.5 7.5 7.5 2.5 13.5 2.5 C13.5 8.5 8.5 13.5 2.5 13.5 Z" />
-              <path d="M3.5 12.5 L12.5 3.5" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => selectPane("history")}
-            data-active={activePane === "history" && sidebarOpen}
-            aria-pressed={activePane === "history" && sidebarOpen}
-            aria-label="History"
-            className="hud-sheet-tab"
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M4 2 L12 2 L12 5 L8 8 L12 11 L12 14 L4 14 L4 11 L8 8 L4 5 Z" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => selectPane("hiking")}
-            data-active={activePane === "hiking" && sidebarOpen}
-            aria-pressed={activePane === "hiking" && sidebarOpen}
-            aria-label="Routes"
-            className="hud-sheet-tab"
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden
-            >
-              <path d="M5 2 L5 14" />
-              <path
-                d="M5 3 L13 5 L5 7 Z"
-                fill="currentColor"
-                fillOpacity="0.45"
-              />
-            </svg>
-          </button>
+              {p.icon}
+            </PaneToggle>
+          ))}
         </nav>
 
         {/* panel body — visible only when expanded */}
