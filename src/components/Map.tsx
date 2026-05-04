@@ -53,6 +53,7 @@ import {
 } from "@/lib/history/landmarks";
 import {
   fetchWikipediaSummary,
+  fetchWikipediaSummaryFromQid,
   type WikipediaSummary,
 } from "@/lib/history/wikipedia";
 import {
@@ -723,25 +724,19 @@ function buildHistoryLandmarksFilter(year: number): maplibregl.FilterSpecificati
   // sequence of comparisons that the validator never confuses for the
   // legacy syntax.
   const undatedVisible = year >= HISTORY_UNDATED_VISIBLE_FROM;
+  // landmarks.ts always serialises inception / dissolved as JS numbers
+  // (or omits them), so we can compare directly without `to-number`.
+  // `coalesce` substitutes a far-future sentinel for missing dissolved
+  // so the >= passes for the common "still extant" case.
   return [
     "all",
-    // Inception: visible if (a) we have one and it's <= year, or
-    // (b) we don't have one and the slider is in the "undated heritage
-    // sites" window (year >= 2000).
     [
       "case",
       ["has", "inception"],
-      ["<=", ["to-number", ["get", "inception"]], year],
+      ["<=", ["get", "inception"], year],
       undatedVisible,
     ],
-    // Dissolved: visible if there is no end-year, or there is one and
-    // it's still after the slider year. `coalesce` substitutes a far-
-    // future sentinel for missing values so the comparison passes.
-    [
-      ">=",
-      ["to-number", ["coalesce", ["get", "dissolved"], 9999]],
-      year,
-    ],
+    [">=", ["coalesce", ["get", "dissolved"], 9999], year],
   ] as maplibregl.FilterSpecification;
 }
 
@@ -3099,8 +3094,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       `;
       const loadingHtml =
         '<div class="hud-popup-body" data-state="loading">Loading summary…</div>';
-      const noArticleHtml =
-        '<div class="hud-popup-body">No Wikipedia article linked.</div>';
+      const wikidataLink = props.wikidataId
+        ? `<a class="hud-popup-link" href="https://www.wikidata.org/wiki/${escapeHtml(
+            props.wikidataId,
+          )}" target="_blank" rel="noopener noreferrer">Wikidata ↗</a>`
+        : "";
+      const noArticleHtml = `<div class="hud-popup-body">No Wikipedia article linked.${
+        wikidataLink ? "<br/>" + wikidataLink : ""
+      }</div>`;
       historyPopupRef.current?.remove();
       const popup = new maplibregl.Popup({
         className: "hud-popup",
@@ -3116,16 +3117,33 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
 
       const title = props.wikipediaTitle;
       const lang = props.wikipediaLang ?? "en";
-      if (title) {
-        fetchWikipediaSummary(title, lang)
-          .then((summary) => {
-            if (popup !== historyPopupRef.current) return;
-            popup.setHTML(headerHtml + summaryToHtml(summary, title));
-          })
-          .catch(() => {});
-      } else {
-        popup.setHTML(headerHtml + noArticleHtml);
-      }
+      const qid = props.wikidataId;
+
+      const tryRender = async () => {
+        // 1. Direct article title (set on the feature) — fastest path,
+        //    works for OSM features with `wikipedia=lang:Title` tags
+        //    and Wikidata features that resolved to enwiki up front.
+        if (title) {
+          const summary = await fetchWikipediaSummary(title, lang);
+          if (summary) return summaryToHtml(summary, title);
+        }
+        // 2. Wikidata sitelink fallback — pulls de/fr/es/it/nl etc.
+        //    when the SPARQL query didn't return an English title.
+        //    This is what unblocks landmarks like Q16970 Garnisonskirche
+        //    St. Anna that only have a German article.
+        if (qid) {
+          const summary = await fetchWikipediaSummaryFromQid(qid);
+          if (summary) return summaryToHtml(summary, summary.title);
+        }
+        return noArticleHtml;
+      };
+
+      tryRender()
+        .then((bodyHtml) => {
+          if (popup !== historyPopupRef.current) return;
+          popup.setHTML(headerHtml + bodyHtml);
+        })
+        .catch(() => {});
     };
 
     const onEnter = () => {

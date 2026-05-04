@@ -83,3 +83,72 @@ export async function fetchWikipediaSummary(
   }
   return null;
 }
+
+interface WbGetEntitiesResponse {
+  entities?: Record<
+    string,
+    {
+      sitelinks?: Record<string, { site?: string; title?: string; url?: string }>;
+    }
+  >;
+}
+
+const qidLookupCache = new Map<string, WikipediaSummary | null>();
+
+/**
+ * For Wikidata-sourced landmarks that lack a `wikipediaTitle` (the
+ * SPARQL query only pulls the English article to keep the bbox query
+ * fast — see landmarks.ts), do a follow-up `wbgetentities` request
+ * that returns sitelinks for a fixed set of major languages, and
+ * fetch the summary from whichever exists.
+ *
+ * This is what made popups say "No Wikipedia article linked" for
+ * landmarks that DO have e.g. a German article — like
+ * `Q16970 Garnisonskirche St. Anna`.
+ */
+export async function fetchWikipediaSummaryFromQid(
+  qid: string,
+  signal?: AbortSignal,
+): Promise<WikipediaSummary | null> {
+  if (!qid) return null;
+  if (qidLookupCache.has(qid)) return qidLookupCache.get(qid) ?? null;
+
+  // Sitelink keys we care about, in preference order.
+  const sites = ["enwiki", "dewiki", "frwiki", "eswiki", "itwiki", "nlwiki"];
+  const url =
+    `https://www.wikidata.org/w/api.php` +
+    `?action=wbgetentities&format=json&origin=*` +
+    `&ids=${encodeURIComponent(qid)}` +
+    `&props=sitelinks/urls&sitefilter=${sites.join("|")}`;
+
+  let data: WbGetEntitiesResponse;
+  try {
+    const res = await fetch(url, {
+      signal,
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) {
+      qidLookupCache.set(qid, null);
+      return null;
+    }
+    data = (await res.json()) as WbGetEntitiesResponse;
+  } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
+    qidLookupCache.set(qid, null);
+    return null;
+  }
+
+  const links = data.entities?.[qid]?.sitelinks ?? {};
+  for (const site of sites) {
+    const link = links[site];
+    if (!link?.title) continue;
+    const lang = site.replace(/wiki$/, "");
+    const summary = await fetchOne(link.title, lang, signal);
+    if (summary) {
+      qidLookupCache.set(qid, summary);
+      return summary;
+    }
+  }
+  qidLookupCache.set(qid, null);
+  return null;
+}
