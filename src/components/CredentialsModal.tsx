@@ -20,8 +20,6 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
 
   const canSubmit = clientId.trim().length > 0 && clientSecret.trim().length > 0;
 
-  // ESC closes; Tab is trapped inside the dialog so keyboard users don't fall
-  // through to the map underneath.
   useEffect(() => {
     if (!onClose) return;
     const onKey = (e: KeyboardEvent) => {
@@ -54,7 +52,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
       onClick={(e) => {
         if (onClose && e.target === e.currentTarget) onClose();
       }}
@@ -65,36 +63,54 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descId}
-        className="w-full max-w-lg rounded-3xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl"
+        className="w-full max-w-lg rounded-3xl bg-[color:var(--surf-1)] p-7 shadow-[0_24px_60px_rgba(0,0,0,0.6)]"
       >
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h2 id={titleId} className="text-lg font-semibold tracking-tight">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="pane-tape mb-3 w-12" aria-hidden />
+            <h2
+              id={titleId}
+              className="text-[18px] font-semibold tracking-tight text-[color:var(--ink)]"
+            >
               Bring your own credentials
             </h2>
-            <p id={descId} className="mt-1 text-sm text-neutral-400">
-              BiosphereOne runs entirely in your browser — no backend, no proxy. Create an OAuth
-              client in your{" "}
+            <p
+              id={descId}
+              className="mt-1.5 text-[13px] leading-relaxed text-[color:var(--ink-dim)]"
+            >
+              BiosphereOne runs entirely in your browser — no backend, no
+              proxy. Create an OAuth client in your{" "}
               <a
                 href="https://dataspace.copernicus.eu/"
                 target="_blank"
                 rel="noreferrer"
-                className="text-[color:var(--hud-accent)] underline underline-offset-2 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--hud-accent)] rounded"
+                className="text-[color:var(--accent)] underline underline-offset-2 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] rounded"
               >
                 Copernicus Data Space
               </a>{" "}
-              account (type: <span className="font-mono">Single-Page Application</span>, Web
-              origins: allow all or your page URL).
+              account (type: <span className="font-mono">Single-Page Application</span>,
+              Web origins: allow all or your page URL).
             </p>
           </div>
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              className="ml-4 text-neutral-500 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--hud-accent)] rounded-full"
+              className="hud-icon-btn shrink-0"
               aria-label="Close"
             >
-              ✕
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                aria-hidden
+              >
+                <path d="M4 4 L12 12 M12 4 L4 12" />
+              </svg>
             </button>
           )}
         </div>
@@ -105,15 +121,17 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
             if (!canSubmit) return;
             onSave({ clientId: clientId.trim(), clientSecret: clientSecret.trim() });
           }}
-          className="space-y-3"
+          className="space-y-4"
         >
-          <label className="block text-sm">
-            <span className="mb-1 block text-neutral-300">Client ID</span>
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-medium text-[color:var(--ink-dim)]">
+              Client ID
+            </span>
             <input
               type="text"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="w-full rounded-full border border-neutral-700 bg-neutral-950 px-5 py-2 font-mono text-sm focus:border-[color:var(--hud-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--hud-accent)]"
+              className="w-full rounded-2xl bg-[color:var(--surf-0)] px-4 py-2.5 font-mono text-[13px] text-[color:var(--ink)] placeholder:text-[color:var(--ink-mute)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]"
               placeholder="sh-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               autoComplete="off"
               spellCheck={false}
@@ -121,21 +139,23 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
             />
           </label>
 
-          <label className="block text-sm">
-            <span className="mb-1 block text-neutral-300">Client Secret</span>
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-medium text-[color:var(--ink-dim)]">
+              Client Secret
+            </span>
             <div className="relative">
               <input
                 type={showSecret ? "text" : "password"}
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
-                className="w-full rounded-full border border-neutral-700 bg-neutral-950 px-5 py-2 pr-20 font-mono text-sm focus:border-[color:var(--hud-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--hud-accent)]"
+                className="w-full rounded-2xl bg-[color:var(--surf-0)] px-4 py-2.5 pr-20 font-mono text-[13px] text-[color:var(--ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]"
                 autoComplete="off"
                 spellCheck={false}
               />
               <button
                 type="button"
                 onClick={() => setShowSecret((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-2 py-1 text-xs text-neutral-400 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--hud-accent)]"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full px-3 py-1 text-[11px] text-[color:var(--ink-dim)] hover:bg-[rgba(241,240,232,0.06)] hover:text-[color:var(--ink)]"
                 aria-label={showSecret ? "Hide secret" : "Show secret"}
               >
                 {showSecret ? "hide" : "show"}
@@ -143,9 +163,10 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
             </div>
           </label>
 
-          <p className="text-xs text-neutral-500">
-            Stored in <span className="font-mono">localStorage</span>. Your credentials never
-            leave this browser except when calling Copernicus directly.
+          <p className="text-[11px] text-[color:var(--ink-mute)]">
+            Stored in <span className="font-mono">localStorage</span>. Your
+            credentials never leave this browser except when calling Copernicus
+            directly.
           </p>
 
           <div className="flex items-center justify-between gap-2 pt-2">
@@ -153,7 +174,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
               <button
                 type="button"
                 onClick={onClear}
-                className="rounded-full px-3 py-2 text-sm text-red-400 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                className="rounded-full px-3 py-2 text-[12px] text-[color:var(--danger)] hover:bg-[rgba(236,128,115,0.08)]"
               >
                 Clear credentials
               </button>
@@ -165,7 +186,7 @@ export function CredentialsModal({ initial, onSave, onClose, onClear }: Props) {
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-full px-4 py-2 text-sm text-neutral-400 hover:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--hud-accent)]"
+                  className="rounded-full px-4 py-2 text-[12px] text-[color:var(--ink-dim)] hover:bg-[rgba(241,240,232,0.06)] hover:text-[color:var(--ink)]"
                 >
                   Cancel
                 </button>

@@ -231,7 +231,7 @@ export function HikingPanel({ mapRef }: Props) {
             <button
               type="button"
               onClick={handleAddGps}
-              className="hud-btn-ghost !w-auto justify-center gap-1.5 px-2 text-[10px] uppercase tracking-wider"
+              className="hud-btn-ghost !w-auto justify-center gap-1.5 px-2 text-[11px] font-medium"
               title="Add my current location"
             >
               <GpsIcon /> GPS
@@ -334,7 +334,7 @@ export function HikingPanel({ mapRef }: Props) {
                 <button
                   type="button"
                   onClick={unfinalize}
-                  className="hud-btn-ghost !w-auto justify-center px-3 text-[10px] uppercase tracking-wider"
+                  className="hud-btn-ghost !w-auto justify-center px-3 text-[11px] font-medium"
                 >
                   Show routes
                 </button>
@@ -343,7 +343,7 @@ export function HikingPanel({ mapRef }: Props) {
                 <button
                   type="button"
                   onClick={handleExportGpx}
-                  className="hud-btn-ghost !w-auto justify-center px-3 text-[10px] uppercase tracking-wider"
+                  className="hud-btn-ghost !w-auto justify-center px-3 text-[11px] font-medium"
                 >
                   Export GPX
                 </button>
@@ -368,7 +368,7 @@ export function HikingPanel({ mapRef }: Props) {
             type="button"
             onClick={reverseWaypoints}
             disabled={waypoints.length < 2}
-            className="hud-btn-ghost !w-auto justify-center gap-1.5 self-start px-2 text-[10px] uppercase tracking-wider"
+            className="hud-btn-ghost !w-auto justify-center gap-1.5 self-start px-2 text-[11px] font-medium"
           >
             <ReverseIcon /> Reverse order
           </button>
@@ -384,7 +384,7 @@ export function HikingPanel({ mapRef }: Props) {
             clearWaypoints();
             setNotice(null);
           }}
-          className="hud-btn-ghost !w-auto justify-center gap-1.5 self-end px-3 text-[10px] uppercase tracking-wider"
+          className="hud-btn-ghost !w-auto justify-center gap-1.5 self-end px-3 text-[11px] font-medium"
           aria-label="Clear all waypoints and routes"
         >
           <svg
@@ -591,7 +591,7 @@ function WaypointRow({
         <div className="truncate text-[11px] text-[color:var(--hud-text)]">
           {label}
         </div>
-        <div className="text-[9px] uppercase tracking-wider text-[color:var(--hud-text-muted)]">
+        <div className="text-[10px] text-[color:var(--hud-text-muted)]">
           {role} · {source}
         </div>
       </div>

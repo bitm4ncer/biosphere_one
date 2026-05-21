@@ -65,7 +65,6 @@ interface LegendSpec {
 }
 
 interface SwatchSpec {
-  /** Discrete colour swatches with labels (e.g. land-cover classes). */
   swatches: { color: string; label: string }[];
   unit?: string;
 }
@@ -73,13 +72,9 @@ interface SwatchSpec {
 const SPECIES_GRADIENT =
   "linear-gradient(to right, #fde047, #fb923c, #ef4444, #7f1d1d)";
 
-// NDVI is a vegetation-index ramp from bare/water to dense canopy. The
-// MODIS palette runs warm-to-green; we approximate it with a CSS ramp
-// matching the dominant tones at the breakpoints.
 const NDVI_GRADIENT =
   "linear-gradient(to right, #c89674, #f6d75c, #b9d860, #5fa83a, #1f5e1f)";
 
-// Forest Loss legends adapt to whichever GFW product resolved.
 const FOREST_LOSS_LEGENDS: Record<string, LegendSpec> = {
   "GLAD-DIST integrated alerts": {
     gradient: "linear-gradient(to right, #67e8f9, #22d3ee, #1e40af)",
@@ -121,9 +116,6 @@ const NATURA_SWATCHES: SwatchSpec = {
   unit: "EEA Natura 2000 · default WMS style",
 };
 
-// ESA WorldCover 2021 official class colours (subset — the most common
-// classes worldwide; a full 11-class palette would be too noisy in the
-// HUD card).
 const LAND_COVER_SWATCHES: SwatchSpec = {
   swatches: [
     { color: "#006400", label: "Tree cover" },
@@ -139,11 +131,6 @@ const LAND_COVER_SWATCHES: SwatchSpec = {
   unit: "ESA WorldCover 2021 · 10 m",
 };
 
-/**
- * Sidebar pane that surfaces five independent nature/biosphere
- * overlays. Each layer is its own card with on/off toggle, caption,
- * legend, and (when on) opacity slider + status footer.
- */
 export function BiospherePanel(props: BiospherePanelProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -192,8 +179,8 @@ export function BiospherePanel(props: BiospherePanelProps) {
         }}
         extras={
           props.speciesOn && (
-            <div className="flex flex-col gap-1">
-              <span className="hud-label text-[9px]">Taxon</span>
+            <div className="flex flex-col gap-1.5">
+              <span className="hud-label">Taxon</span>
               <div className="hud-variant-chips no-scrollbar" role="radiogroup" aria-label="Taxonomic filter">
                 {props.speciesTaxonOptions.map((opt) => {
                   const active = (opt.key ?? null) === (props.speciesTaxonKey ?? null);
@@ -314,37 +301,28 @@ function BiosphereLayerCard({
   onOpacityChange,
 }: BiosphereLayerCardProps) {
   return (
-    <HudPanel label={label}>
-      <div className="flex flex-col gap-2">
-        <div
-          className="hud-tab-row"
-          style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
-          role="tablist"
-          aria-label={`${label} on/off`}
-        >
+    <HudPanel>
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-[13px] font-semibold text-[color:var(--ink)]">
+            {label}
+          </h3>
           <button
             type="button"
-            className="hud-tab"
-            data-active={!on}
-            aria-pressed={!on}
-            onClick={() => onToggle(false)}
+            role="switch"
+            aria-checked={on}
+            aria-label={`${label} on/off`}
+            onClick={() => onToggle(!on)}
+            className="hud-switch"
+            data-on={on}
           >
-            Off
-          </button>
-          <button
-            type="button"
-            className="hud-tab"
-            data-active={on}
-            aria-pressed={on}
-            onClick={() => onToggle(true)}
-          >
-            On
+            <span className="hud-switch-thumb" aria-hidden />
           </button>
         </div>
 
         {on && (
           <div className="flex items-center gap-2">
-            <span className="hud-label text-[9px]">Opacity</span>
+            <span className="hud-label w-12 shrink-0">Opacity</span>
             <input
               type="range"
               min={0}
@@ -356,7 +334,7 @@ function BiosphereLayerCard({
               style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
               aria-label={`${label} opacity`}
             />
-            <span className="hud-mono w-8 text-right text-[10px] text-[color:var(--hud-text-muted)]">
+            <span className="hud-mono w-9 shrink-0 text-right text-[10px] text-[color:var(--ink-dim)]">
               {Math.round(opacity * 100)}%
             </span>
           </div>
@@ -364,7 +342,7 @@ function BiosphereLayerCard({
 
         {extras}
 
-        <p className="text-[10px] leading-snug text-[color:var(--hud-text-muted)]">
+        <p className="text-[11px] leading-snug text-[color:var(--ink-dim)]">
           {caption}
         </p>
 
@@ -372,7 +350,7 @@ function BiosphereLayerCard({
         {swatches && on && <SwatchGrid spec={swatches} />}
 
         {status && (
-          <p className="hud-mono text-[9px] uppercase tracking-wider text-[color:var(--hud-text-muted)]">
+          <p className="hud-mono text-[10px] text-[color:var(--ink-mute)]">
             {status}
           </p>
         )}
@@ -383,19 +361,19 @@ function BiosphereLayerCard({
 
 function LegendBar({ spec }: { spec: LegendSpec }) {
   return (
-    <div className="flex flex-col gap-0.5" aria-label="Legend">
+    <div className="flex flex-col gap-1" aria-label="Legend">
       <div
         className="h-1.5 w-full rounded-full"
         style={{ background: spec.gradient }}
         aria-hidden
       />
-      <div className="flex justify-between text-[9px] text-[color:var(--hud-text-muted)]">
+      <div className="flex justify-between text-[10px] text-[color:var(--ink-dim)]">
         <span>{spec.minLabel}</span>
         {spec.midLabel && <span>{spec.midLabel}</span>}
         <span>{spec.maxLabel}</span>
       </div>
       {spec.unit && (
-        <span className="hud-mono text-[9px] text-[color:var(--hud-text-muted)]">
+        <span className="hud-mono text-[10px] text-[color:var(--ink-mute)]">
           {spec.unit}
         </span>
       )}
@@ -406,7 +384,7 @@ function LegendBar({ spec }: { spec: LegendSpec }) {
 function SwatchGrid({ spec }: { spec: SwatchSpec }) {
   return (
     <div className="flex flex-col gap-1" aria-label="Class legend">
-      <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+      <div className="grid grid-cols-2 gap-x-2 gap-y-1">
         {spec.swatches.map((s) => (
           <div key={s.label} className="flex items-center gap-1.5">
             <span
@@ -414,14 +392,14 @@ function SwatchGrid({ spec }: { spec: SwatchSpec }) {
               style={{ backgroundColor: s.color }}
               aria-hidden
             />
-            <span className="text-[9px] text-[color:var(--hud-text-muted)]">
+            <span className="text-[10px] text-[color:var(--ink-dim)]">
               {s.label}
             </span>
           </div>
         ))}
       </div>
       {spec.unit && (
-        <span className="hud-mono text-[9px] text-[color:var(--hud-text-muted)]">
+        <span className="hud-mono text-[10px] text-[color:var(--ink-mute)]">
           {spec.unit}
         </span>
       )}

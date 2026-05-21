@@ -4,26 +4,22 @@ import { HudPanel } from "./HudPanel";
 import { HistoryTimeline } from "./HistoryTimeline";
 
 interface HistoryPanelProps {
-  // Timeline year — drives both the Timeline-Map basemap and (when
-  // landmarks are on) the inception-year filter on landmark dots.
   year: number;
   onYearChange: (year: number) => void;
   earliestVisibleYear: number | null;
   visibleCount: number;
   loading: boolean;
 
-  // Timeline Map: swap basemap to OHM "historical" for the chosen year.
   mapOn: boolean;
   onMapOnChange: (on: boolean) => void;
 
-  // Historic Landmarks: independent overlay (OSM historic + Wikidata).
   landmarksOn: boolean;
   landmarksOpacity: number;
   onLandmarksOnChange: (on: boolean) => void;
   onLandmarksOpacityChange: (o: number) => void;
 }
 
-function OnOffRow({
+function ToggleHeader({
   label,
   on,
   onChange,
@@ -33,45 +29,31 @@ function OnOffRow({
   onChange: (on: boolean) => void;
 }) {
   return (
-    <div
-      className="hud-tab-row"
-      style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
-      role="tablist"
-      aria-label={`${label} on/off`}
-    >
+    <div className="flex items-center justify-between gap-3">
+      <h3 className="text-[13px] font-semibold text-[color:var(--ink)]">
+        {label}
+      </h3>
       <button
         type="button"
-        className="hud-tab"
-        data-active={!on}
-        aria-pressed={!on}
-        onClick={() => onChange(false)}
+        role="switch"
+        aria-checked={on}
+        aria-label={`${label} on/off`}
+        onClick={() => onChange(!on)}
+        className="hud-switch"
+        data-on={on}
       >
-        Off
-      </button>
-      <button
-        type="button"
-        className="hud-tab"
-        data-active={on}
-        aria-pressed={on}
-        onClick={() => onChange(true)}
-      >
-        On
+        <span className="hud-switch-thumb" aria-hidden />
       </button>
     </div>
   );
 }
 
 export function HistoryPanel(props: HistoryPanelProps) {
-  // The Year slider is meaningful whenever any history layer is on:
-  // it filters the OHM timeline-map AND the inception year of Landmark
-  // dots. Surfacing it only when Timeline-Map was on (the previous
-  // shape) silently filtered Landmarks via a stale persisted year with
-  // no UI affordance to recover. Now both gates feed the same control.
   const showYearSlider = props.mapOn || props.landmarksOn;
   return (
     <div className="flex flex-col gap-3">
       {showYearSlider && (
-        <HudPanel label="Year">
+        <HudPanel>
           <HistoryTimeline
             year={props.year}
             onYearChange={props.onYearChange}
@@ -82,26 +64,24 @@ export function HistoryPanel(props: HistoryPanelProps) {
         </HudPanel>
       )}
 
-      <HudPanel label="Timeline Map">
-        <div className="flex flex-col gap-2">
-          <OnOffRow
+      <HudPanel>
+        <div className="flex flex-col gap-2.5">
+          <ToggleHeader
             label="Timeline Map"
             on={props.mapOn}
             onChange={props.onMapOnChange}
           />
-
-          <p className="text-[10px] leading-snug text-[color:var(--hud-text-muted)]">
+          <p className="text-[11px] leading-snug text-[color:var(--ink-dim)]">
             Replaces the basemap with OpenHistoricalMap&apos;s sepia
             historical style for the chosen year. Drag the Year slider
-            above to travel through time. Off restores your normal
-            basemap.
+            above to travel through time.
           </p>
         </div>
       </HudPanel>
 
-      <HudPanel label="Historic Landmarks">
-        <div className="flex flex-col gap-2">
-          <OnOffRow
+      <HudPanel>
+        <div className="flex flex-col gap-2.5">
+          <ToggleHeader
             label="Historic Landmarks"
             on={props.landmarksOn}
             onChange={props.onLandmarksOnChange}
@@ -109,7 +89,7 @@ export function HistoryPanel(props: HistoryPanelProps) {
 
           {props.landmarksOn && (
             <div className="flex items-center gap-2">
-              <span className="hud-label text-[9px]">Opacity</span>
+              <span className="hud-label w-12 shrink-0">Opacity</span>
               <input
                 type="range"
                 min={0}
@@ -127,20 +107,19 @@ export function HistoryPanel(props: HistoryPanelProps) {
                 }}
                 aria-label="Historic Landmarks opacity"
               />
-              <span className="hud-mono w-8 text-right text-[10px] text-[color:var(--hud-text-muted)]">
+              <span className="hud-mono w-9 shrink-0 text-right text-[10px] text-[color:var(--ink-dim)]">
                 {Math.round(props.landmarksOpacity * 100)}%
               </span>
             </div>
           )}
 
-          <p className="text-[10px] leading-snug text-[color:var(--hud-text-muted)]">
+          <p className="text-[11px] leading-snug text-[color:var(--ink-dim)]">
             <span style={{ color: "#ff2d92" }}>●</span> Wikidata (named,
             dated, links to Wikipedia){" "}
             <span style={{ color: "#22d3ee" }}>●</span> OpenStreetMap{" "}
             <span className="hud-mono">historic=*</span> (castles, ruins,
-            archaeological sites, monuments &amp; battlefields). The
-            Year slider filters dot inception years. Tap a marker for a
-            Wikipedia summary.
+            archaeological sites, monuments &amp; battlefields). Tap a
+            marker for a Wikipedia summary.
           </p>
         </div>
       </HudPanel>

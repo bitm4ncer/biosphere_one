@@ -3221,12 +3221,22 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
   }, [flyTarget]);
 
 
+  const activePaneTheme =
+    activePane === "control" ? "map" : activePane;
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full" data-active-pane={activePaneTheme}>
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Floating top bar — icon, search field, basemap-mode switch */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-2 px-3 pt-[max(env(safe-area-inset-top,0px),12px)]">
+      {/* Floating top bar — icon, search field, basemap-mode switch.
+          When the desktop drawer is open it pads the right edge so the
+          basemap-switch never slides under it. */}
+      <div
+        className={[
+          "pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-2 px-3 pt-[max(env(safe-area-inset-top,0px),12px)]",
+          "transition-[padding] duration-200 ease-out",
+          sidebarOpen ? "md:pr-[384px]" : "md:pr-3",
+        ].join(" ")}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={`${ICON_BASE_PATH}/icon.svg`}
@@ -3307,30 +3317,30 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
         </div>
       )}
 
-      {/* Sidebar — bottom-sheet on mobile, side-drawer on desktop */}
+      {/* Sidebar — bottom-sheet on mobile, floating drawer on desktop.
+          Note: `md:overflow-visible` so the side-handle column can poke
+          past the drawer's left edge. The inner .hud-sidebar applies
+          its own clipping via the rounded body. */}
       <aside
         data-sheet-state={sheetState}
         className={[
-          // Mobile positioning + state-driven height live on .hud-bottom-sheet
-          // (globals.css) so the map stays the dominant element. The sheet is
-          // always anchored to the viewport bottom; only its height changes.
           "hud-bottom-sheet",
           "flex w-full flex-col",
-          // Desktop overrides
-          "md:absolute md:right-0 md:top-0 md:bottom-0",
-          "md:left-auto md:max-w-[340px]",
-          "md:rounded-none md:border-t-0",
-          "md:transition-transform md:duration-200 md:ease-out",
+          "md:absolute md:right-3 md:top-3 md:bottom-3",
+          "md:left-auto md:w-[360px] md:max-w-[360px]",
+          "md:overflow-visible",
+          "md:transition-transform md:duration-300 md:ease-out",
           "md:will-change-transform",
           sidebarOpen
             ? "md:translate-x-0"
-            : "md:translate-x-[calc(100%-34px)]",
+            : "md:translate-x-[calc(100%+12px)]",
         ].join(" ")}
       >
-        {/* Side-handle column — desktop only. Top: open/close chevron;
-            below: one PaneToggle per sidebar pane. Mobile uses the
-            sheet-tabs row below instead. */}
-        <div className="hud-side-handles absolute -left-[34px] top-4 flex shrink-0 flex-col items-start gap-2">
+        {/* Side-handle column — desktop only. Open/close chevron stays
+            fixed at the top, the pane toggles stack below. Position is
+            driven by the .hud-side-handles class in globals.css so they
+            sit cleanly below the floating top bar. */}
+        <div className="hud-side-handles">
           <SidebarToggle
             open={sidebarOpen}
             onToggle={() =>
@@ -3344,6 +3354,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               label={p.label}
               onToggle={() => selectPane(p.key)}
               variant="handle"
+              pane={p.key === "control" ? "map" : p.key}
             >
               {p.icon}
             </PaneToggle>
@@ -3367,20 +3378,37 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
               label={p.label}
               onToggle={() => selectPane(p.key)}
               variant="tab"
+              pane={p.key === "control" ? "map" : p.key}
             >
               {p.icon}
             </PaneToggle>
           ))}
         </nav>
 
-        {/* panel body — visible only when expanded */}
+        {/* panel body — visible only when expanded. On desktop this
+            div carries the rounded silhouette + drop shadow so the
+            handles outside (in `.hud-side-handles`) stay un-clipped. */}
         <div
-          className="hud-sidebar hud-scanlines flex min-w-0 flex-1 flex-col overflow-hidden"
+          className="hud-sidebar flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-3xl md:shadow-[0_18px_42px_rgba(0,0,0,0.55)]"
           aria-hidden={!sidebarOpen}
         >
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center border-y border-[color:var(--hud-border)] px-3 h-9 md:h-10">
-            <div className="justify-self-start">
-              {/* Expand / shrink — mobile only, on the left */}
+          {/* Pane signature tape — coloured strip identifying the active pane */}
+          <div className="px-4 pt-3 md:pt-4">
+            <div className="pane-tape" aria-hidden />
+          </div>
+
+          <div className="flex items-center justify-between gap-2 px-4 pb-2">
+            <h2 className="text-[15px] font-semibold tracking-tight text-[color:var(--ink)]">
+              {activePane === "hiking"
+                ? "Routes"
+                : activePane === "biosphere"
+                  ? "Biosphere"
+                  : activePane === "history"
+                    ? "History"
+                    : "Map"}
+            </h2>
+            <div className="flex items-center gap-1">
+              {/* Expand / shrink — mobile only */}
               <button
                 type="button"
                 onClick={toggleExpand}
@@ -3399,7 +3427,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                   aria-hidden
                 >
                   {sheetState === "full" ? (
-                    /* Inward corner brackets — collapse / shrink */
                     <>
                       <path d="M6 2 L6 6 L2 6" />
                       <path d="M10 2 L10 6 L14 6" />
@@ -3407,7 +3434,6 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                       <path d="M10 14 L10 10 L14 10" />
                     </>
                   ) : (
-                    /* Outward corner brackets — expand to full screen */
                     <>
                       <path d="M2 6 L2 2 L6 2" />
                       <path d="M14 6 L14 2 L10 2" />
@@ -3417,24 +3443,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
                   )}
                 </svg>
               </button>
-              {/* Brand badge — desktop only */}
-              <span className="hud-mono hidden text-[10px] text-[color:var(--hud-text-muted)] md:inline">
-                BIOSPHERE · v1
-              </span>
-            </div>
-            <span className="hud-label justify-self-center truncate text-center">
-              {activePane === "hiking"
-                ? "Routes"
-                : activePane === "biosphere"
-                  ? "Biosphere"
-                  : activePane === "history"
-                    ? "History"
-                    : "Map Controls"}
-            </span>
-            <div className="justify-self-end">
-              {/* Collapse to peek — mobile only, on the right; arrow-down
-                  mirrors the drag-handle action since it minimises rather
-                  than dismisses. */}
+              {/* Collapse to peek — mobile only */}
               <button
                 type="button"
                 onClick={collapseToPeek}
@@ -3458,7 +3467,7 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-3 pt-3 pb-3">
+          <div className="hud-scrollbar flex flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-4 pb-4 pt-1">
             {activePane === "hiking" ? (
               <HikingPanel mapRef={mapRef} />
             ) : activePane === "history" ? (
@@ -3663,10 +3672,14 @@ function BasemapPanel({
           <span className="hud-label text-[9px]">{label}</span>
           {isLive && (
             <span
-              className="hud-label text-[9px] text-[color:var(--hud-accent)]"
+              className="inline-flex items-center gap-1 text-[10px] font-medium text-[color:var(--accent)]"
               aria-label="currently displayed"
             >
-              · LIVE
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--accent)]"
+                aria-hidden
+              />
+              Live
             </span>
           )}
           <span className="line" aria-hidden />
@@ -3895,37 +3908,28 @@ function RailsPanel({
     railStyle === "lines" ? railLineCaption : "OpenRailwayMap raster · OSM";
 
   return (
-    <HudPanel label="Rails">
-      <div className="flex flex-col gap-2">
-        <div
-          className="hud-tab-row"
-          style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
-          role="tablist"
-          aria-label="Rail overlay on/off"
-        >
+    <HudPanel>
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-[13px] font-semibold text-[color:var(--ink)]">
+            Rails
+          </h3>
           <button
             type="button"
-            className="hud-tab"
-            data-active={!on}
-            aria-pressed={!on}
-            onClick={() => onChange(false)}
+            role="switch"
+            aria-checked={on}
+            aria-label="Rail overlay on/off"
+            onClick={() => onChange(!on)}
+            className="hud-switch"
+            data-on={on}
           >
-            Off
-          </button>
-          <button
-            type="button"
-            className="hud-tab"
-            data-active={on}
-            aria-pressed={on}
-            onClick={() => onChange(true)}
-          >
-            On
+            <span className="hud-switch-thumb" aria-hidden />
           </button>
         </div>
 
         {on && (
           <div className="flex items-center gap-2">
-            <span className="hud-label text-[9px]">Style</span>
+            <span className="hud-label w-12 shrink-0">Style</span>
             <div
               className="hud-tab-row flex-1"
               style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}
@@ -3953,7 +3957,7 @@ function RailsPanel({
         {on && (
           <>
             <div className="flex items-center gap-2">
-              <span className="hud-label text-[9px]">Opacity</span>
+              <span className="hud-label w-12 shrink-0">Opacity</span>
               <input
                 type="range"
                 min={0}
@@ -3965,11 +3969,11 @@ function RailsPanel({
                 style={{ ["--hud-fill" as string]: `${Math.round(opacity * 100)}%` }}
                 aria-label="Rail overlay opacity"
               />
-              <span className="hud-mono w-8 text-right text-[10px] text-[color:var(--hud-text-muted)]">
+              <span className="hud-mono w-9 shrink-0 text-right text-[10px] text-[color:var(--ink-dim)]">
                 {Math.round(opacity * 100)}%
               </span>
             </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-[color:var(--hud-text-muted)]">
+            <div className="flex items-center gap-1.5 text-[10px] text-[color:var(--ink-dim)]">
               {railStyle === "lines"
                 && (railNetworkStatus.inFlight > 0
                   || railNetworkStatus.cooldownUntil > Date.now()) && (

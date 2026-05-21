@@ -4,9 +4,7 @@ interface SidebarToggleProps {
 }
 
 /**
- * Tab handle that hangs off the left edge of the sidebar. When the sidebar
- * is open the chevron points right (tap to push the drawer closed); when
- * closed the chevron points left (tap to pull the drawer open).
+ * Open/close handle hanging off the sidebar's left edge.
  */
 export function SidebarToggle({ open, onToggle }: SidebarToggleProps) {
   return (
@@ -15,6 +13,7 @@ export function SidebarToggle({ open, onToggle }: SidebarToggleProps) {
       onClick={onToggle}
       aria-label={open ? "Close panel" : "Open panel"}
       aria-expanded={open}
+      data-handle="open"
       className="hud-handle pointer-events-auto"
     >
       <svg
