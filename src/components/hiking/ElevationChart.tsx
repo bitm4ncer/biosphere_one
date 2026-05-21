@@ -48,19 +48,27 @@ export function ElevationChart({
         className="block w-full"
         aria-label="Elevation profile"
       >
+        {/* Stroke + fill both use currentColor so the chart stays
+            readable regardless of the surrounding card's background.
+            Inside an active route card (.hud-card-flat[data-active])
+            the cascaded color becomes --accent-ink, giving high
+            contrast against the olive accent fill; on idle/dark
+            cards it inherits the pane's --accent. */}
         <path
           d={`${path.d} L${width},${height} L0,${height} Z`}
-          fill="var(--hud-accent-glow)"
-          opacity="0.4"
+          fill="currentColor"
+          opacity="0.22"
         />
         <path
           d={path.d}
           fill="none"
-          stroke="var(--hud-accent)"
-          strokeWidth="1.2"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+          strokeLinecap="round"
         />
       </svg>
-      <div className="flex justify-between text-[9px] text-neutral-500">
+      <div className="flex justify-between text-[9px] opacity-70">
         <span>0 km</span>
         <span>
           {Math.round(path.min)}–{Math.round(path.max)} m

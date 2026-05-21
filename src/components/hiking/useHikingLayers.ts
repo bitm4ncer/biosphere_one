@@ -16,9 +16,26 @@ const ROUTE_LAYER_CASING = "hiking-routes-casing";
 const ROUTE_LAYER_ALT = "hiking-routes-alt";
 const ROUTE_LAYER_ALT_CASING = "hiking-routes-alt-casing";
 
-const COLOR_PRIMARY = "#d4ff38"; // accent
 export const COLOR_START = "#7df09e";
 export const COLOR_END = "#ff6b82";
+
+/** Per-route pastel palette. Each candidate (Route 1, 2, 3…) gets its
+ *  own bright-but-soft colour so the line on the map and the matching
+ *  card in the side panel are visually paired. Order matters — keep it
+ *  high-contrast hue-to-hue so adjacent routes never read as the same
+ *  swatch. Cycles past length-1 are extremely rare in practice. */
+export const ROUTE_PALETTE: readonly string[] = [
+  "#9ee7c5", // mint
+  "#f5c2a0", // peach
+  "#c8b3e8", // lavender
+  "#a8d4f0", // sky
+  "#f5d985", // butter
+  "#f0a8c0", // rose
+];
+
+export function colorForCandidate(index: number): string {
+  return ROUTE_PALETTE[index % ROUTE_PALETTE.length];
+}
 
 function hashStr(s: string): number {
   let h = 2166136261 >>> 0;
@@ -140,17 +157,24 @@ function routeFeatures(
     : candidates;
   return {
     type: "FeatureCollection",
-    features: visible.map((c) => ({
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: c.coordinates.map(([lon, lat]) => [lon, lat]),
-      },
-      properties: {
-        id: c.id,
-        selected: c.id === selectedId,
-      },
-    })),
+    features: visible.map((c) => {
+      // Use the candidate's index in the FULL candidate list (not the
+      // filtered `visible` list) so the colour mapping stays stable
+      // when alternatives are dropped after finalize.
+      const fullIndex = candidates.findIndex((x) => x.id === c.id);
+      return {
+        type: "Feature" as const,
+        geometry: {
+          type: "LineString" as const,
+          coordinates: c.coordinates.map(([lon, lat]) => [lon, lat]),
+        },
+        properties: {
+          id: c.id,
+          selected: c.id === selectedId,
+          color: colorForCandidate(Math.max(0, fullIndex)),
+        },
+      };
+    }),
   };
 }
 
@@ -313,9 +337,9 @@ export function useHikingLayers(map: MLMap | null) {
           filter: ["!", ["get", "selected"]],
           layout: { "line-cap": "round", "line-join": "round" },
           paint: {
-            "line-color": COLOR_PRIMARY,
+            "line-color": ["get", "color"],
             "line-width": 2.5,
-            "line-opacity": 0.5,
+            "line-opacity": 0.55,
             "line-dasharray": [2, 1.5],
           },
         });
@@ -342,7 +366,7 @@ export function useHikingLayers(map: MLMap | null) {
           filter: ["==", ["get", "selected"], true],
           layout: { "line-cap": "round", "line-join": "round" },
           paint: {
-            "line-color": COLOR_PRIMARY,
+            "line-color": ["get", "color"],
             "line-width": 4,
             "line-opacity": 0.95,
           },

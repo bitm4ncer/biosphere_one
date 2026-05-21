@@ -16,6 +16,7 @@ import { downloadGpx, routeToGpx } from "@/lib/hiking/gpx";
 import {
   COLOR_END,
   COLOR_START,
+  colorForCandidate,
   pastelForWaypoint,
 } from "@/components/hiking/useHikingLayers";
 import { ElevationChart } from "@/components/hiking/ElevationChart";
@@ -261,6 +262,13 @@ export function HikingPanel({ mapRef }: Props) {
               : candidates
             ).map((c, i) => {
               const active = c.id === selectedCandidateId;
+              // Find the candidate's index in the FULL list so the
+              // colour stays paired with the line on the map even
+              // when alternatives are filtered out after finalize.
+              const fullIndex = candidates.findIndex((x) => x.id === c.id);
+              const routeColor = colorForCandidate(
+                Math.max(0, fullIndex >= 0 ? fullIndex : i),
+              );
               const greenPct = c.greenRatio == null
                 ? null
                 : Math.round(c.greenRatio * 100);
@@ -271,11 +279,19 @@ export function HikingPanel({ mapRef }: Props) {
                   onClick={() => selectCandidate(c.id)}
                   data-active={active}
                   className="hud-basemap-btn hud-card-flat flex flex-col items-stretch gap-1 !rounded-2xl !p-3"
+                  style={
+                    { ["--route-color" as string]: routeColor } as React.CSSProperties
+                  }
                 >
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-[11px] font-semibold">
+                    <span className="flex items-center gap-2 text-[11px] font-semibold">
+                      <span
+                        aria-hidden
+                        className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ backgroundColor: routeColor }}
+                      />
                       {finalized ? "Selected" : `Route ${i + 1}`}
-                      <span className="ml-1.5 text-[10px] font-normal text-[color:var(--hud-text-muted)]">
+                      <span className="text-[10px] font-normal text-[color:var(--hud-text-muted)]">
                         · {c.profile}
                       </span>
                     </span>

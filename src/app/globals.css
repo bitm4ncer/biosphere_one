@@ -1104,8 +1104,11 @@ input[type="range"].hud-slider::-moz-range-thumb {
 .hud-card-flat {
   background: rgba(241, 240, 232, 0.04) !important;
 }
+/* When active, prefer the card's own --route-color (set inline per
+   route option in HikingPanel) so each route reads in its signature
+   pastel. Falls back to the pane accent for non-route uses. */
 .hud-card-flat[data-active="true"] {
-  background: var(--accent) !important;
+  background: var(--route-color, var(--accent)) !important;
   color: var(--accent-ink) !important;
 }
 .hud-card-flat[data-active="true"] * {
