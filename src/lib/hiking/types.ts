@@ -43,6 +43,7 @@ export interface RouteCandidate {
 
 export type HikingPhase =
   | { kind: "idle" }
-  | { kind: "routing" }
+  | { kind: "routing"; received?: number; expected?: number }
+  | { kind: "scoring" }
   | { kind: "routed" }
   | { kind: "error"; message: string };

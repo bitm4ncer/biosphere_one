@@ -6,6 +6,7 @@ import type { Map as MLMap } from "maplibre-gl";
 import { HudPanel } from "./HudPanel";
 import { useHiking } from "@/lib/hiking/store";
 import { computeHikingRoute } from "@/lib/hiking/search";
+import type { RouteCandidate } from "@/lib/hiking/types";
 import {
   BROUTER_PROFILES,
   profileMode,
@@ -73,26 +74,57 @@ export function HikingPanel({ mapRef }: Props) {
     abortRef.current?.abort();
     abortRef.current = ctrl;
     const handle = window.setTimeout(async () => {
-      setPhase({ kind: "routing" });
+      setPhase({ kind: "routing", received: 0, expected: 1 });
       setNotice(null);
+      // Local accumulator so streaming inserts don't have to read back
+      // the Zustand state — avoids race conditions between rapid
+      // arrivals when both alts return within the same tick.
+      const streamed: RouteCandidate[] = [];
+      // Track whether `onScored` already settled (sync fast-path for
+      // long routes that skip green scoring). Prevents flipping the
+      // phase back to "scoring" after scoring has already concluded.
+      let scoringSettled = false;
       try {
         const result = await computeHikingRoute({
           waypoints,
           roundTrip,
           profile,
           signal: ctrl.signal,
+          // Phase 1 streaming: emit each BRouter alternative the moment
+          // it lands so the user sees Route 1 long before Route 2/3
+          // finish. Dedupe by distance to avoid showing two near-
+          // identical routes during the stream.
+          onCandidate: (c, expected) => {
+            if (ctrl.signal.aborted) return;
+            const dup = streamed.find(
+              (s) => Math.abs(s.distanceKm - c.distanceKm) < 0.1,
+            );
+            if (!dup) streamed.push(c);
+            setCandidates([...streamed]);
+            setPhase({
+              kind: "routing",
+              received: streamed.length,
+              expected,
+            });
+          },
           // Phase 2: green scoring resolves async; re-render candidates
           // (now with greenRatio) and re-rank. The user already saw the
-          // unscored line within ~1 s.
+          // unscored line during phase 1.
           onScored: (scored, scoreNotice) => {
             if (ctrl.signal.aborted) return;
+            scoringSettled = true;
             setCandidates(scored);
+            setPhase({ kind: "routed" });
             if (scoreNotice) setNotice(scoreNotice);
           },
         });
         if (ctrl.signal.aborted) return;
         setCandidates(result.candidates);
-        setPhase({ kind: "routed" });
+        // If green scoring already finished synchronously (long-route
+        // skip path), leave the phase alone — it's already "routed".
+        // Otherwise hold at "scoring" so the indicator stays visible
+        // until the Overpass call resolves.
+        if (!scoringSettled) setPhase({ kind: "scoring" });
         if (result.notice) setNotice(result.notice);
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
@@ -446,9 +478,23 @@ function RouteSummary({
     );
   }
   if (phase.kind === "routing") {
+    const { received = 0, expected = 1 } = phase;
+    // Show progress only when the streaming counter is meaningful —
+    // otherwise the bare "Computing…" message is clearer than "0/1".
+    const label =
+      expected > 1 && received < expected
+        ? `Computing routes… ${received} of ${expected}`
+        : received >= 1
+          ? `Refining route… (${received} done)`
+          : "Computing route…";
+    return (
+      <p className="text-[11px] text-[color:var(--hud-text-muted)]">{label}</p>
+    );
+  }
+  if (phase.kind === "scoring") {
     return (
       <p className="text-[11px] text-[color:var(--hud-text-muted)]">
-        Computing route…
+        Scoring greenery…
       </p>
     );
   }
