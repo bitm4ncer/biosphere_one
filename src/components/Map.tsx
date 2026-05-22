@@ -1498,13 +1498,17 @@ function buildLiveLocationEl(): {
   const cone = document.createElement("div");
   cone.className = "live-location-cone";
   cone.hidden = true;
+  // Gradient stops use currentColor so the cone follows the active
+  // pane accent via the .live-location-cone CSS rule (which sets
+  // color: var(--accent)). Random gradient ID avoids collisions if
+  // the element is ever rendered twice in the same document.
   const gradId = `lc-grad-${Math.random().toString(36).slice(2, 10)}`;
   cone.innerHTML = `
     <svg width="52" height="56" viewBox="0 0 52 56" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="${gradId}" x1="26" y1="0" x2="26" y2="56" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#d4ff38" stop-opacity="0.85"/>
-          <stop offset="1" stop-color="#d4ff38" stop-opacity="0"/>
+          <stop offset="0" stop-color="currentColor" stop-opacity="0.85"/>
+          <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
         </linearGradient>
       </defs>
       <path d="M26 0 L52 56 L26 46 L0 56 Z" fill="url(#${gradId})"/>
@@ -1782,7 +1786,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     );
     const geolocate = new maplibregl.GeolocateControl({
       trackUserLocation: true,
-      showUserLocation: true,
+      // We own the marker DOM via buildLiveLocationEl + the dedicated
+      // live-marker effect below. MapLibre's built-in marker is
+      // disabled so we have a single source of truth and never end up
+      // in a state where its hidden default-marker is "shown" but our
+      // custom marker silently failed to attach.
+      showUserLocation: false,
       showAccuracyCircle: true,
       positionOptions: {
         enableHighAccuracy: true,
@@ -1993,8 +2002,13 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
           setOverlay(map, overlayUrl, sector, overlayOpacity);
         applyOhmDate(map, historyYear);
       };
+      // `load` is a one-shot initial event in MapLibre's lifecycle —
+      // every subsequent setStyle fires `style.load` instead. Using
+      // `load` here meant `reapply` never ran after a basemap switch,
+      // which silently dropped sector outlines / projection / OHM
+      // dates whenever the user changed maps.
       if (map.isStyleLoaded()) setTimeout(reapply, 0);
-      else map.once("load", reapply);
+      else map.once("style.load", reapply);
       return;
     }
 
@@ -2009,10 +2023,14 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       if (overlayUrl && sector) setOverlay(map, overlayUrl, sector, overlayOpacity);
       if (basemapMode === "hybrid") addHybridOverlay(map);
     };
+    // Same lifecycle bug as above — only `style.load` fires after a
+    // basemap swap. Listening for `load` meant the hybrid overlay was
+    // wiped by setStyle and never re-added until the user toggled
+    // photo↔hybrid manually.
     if (map.isStyleLoaded()) {
       setTimeout(reapply, 0);
     } else {
-      map.once("load", reapply);
+      map.once("style.load", reapply);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, activeVariantId, liveBasemapDayOffset]);
@@ -2034,42 +2052,41 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     const geo = geolocateRef.current;
     if (!map || !geo) return;
 
+    // ────────────────────────────────────────────────────────────
+    // The live-location marker lives for the full lifetime of this
+    // effect — created up-front, hidden until we have a position,
+    // and never destroyed by trackuserlocationend. Previously it was
+    // created lazily on the first `geolocate` event, which lost a
+    // race against the auto-trigger on app launch (the event could
+    // fire before this effect registered its listener) and meant
+    // toggling tracking off→on briefly produced a window with no
+    // marker. Eager creation makes the whole thing deterministic.
+    // ────────────────────────────────────────────────────────────
+    const { root, scaler, cone } = buildLiveLocationEl();
+    root.style.visibility = "hidden";
+    scalerRef.current = scaler;
+    coneRef.current = cone;
+    const marker = new maplibregl.Marker({
+      element: root,
+      anchor: "center",
+      rotationAlignment: "map",
+    })
+      .setLngLat([0, 0])
+      .addTo(map);
+    liveMarkerRef.current = marker;
+
     const applyScale = () => {
-      const scaler = scalerRef.current;
-      if (!scaler) return;
+      const sc = scalerRef.current;
+      if (!sc) return;
       const z = map.getZoom();
       // Linear: 0.4x at z6 → 1.0x at z18 (clamped).
       const scale = Math.max(0.4, Math.min(1, 0.4 + (z - 6) * 0.05));
-      scaler.style.transform = `scale(${scale})`;
+      sc.style.transform = `scale(${scale})`;
     };
-
-    const ensureMarker = (lng: number, lat: number) => {
-      if (!liveMarkerRef.current) {
-        const { root, scaler, cone } = buildLiveLocationEl();
-        coneRef.current = cone;
-        scalerRef.current = scaler;
-        liveMarkerRef.current = new maplibregl.Marker({
-          element: root,
-          anchor: "center",
-          rotationAlignment: "map",
-        })
-          .setLngLat([lng, lat])
-          .addTo(map);
-        applyScale();
-      } else {
-        liveMarkerRef.current.setLngLat([lng, lat]);
-      }
-    };
-
+    applyScale();
     map.on("zoom", applyScale);
 
     let compassStarted = false;
-    // True for the very next geolocate event we receive, then resets. We
-    // flip it back to true on every crosshair-button tap so the map travels
-    // to the user explicitly, rather than relying on GeolocateControl's
-    // internal fitBounds (which doesn't always trigger when `hash: true`
-    // already restored a different camera). Initial value is true so the
-    // auto-trigger on launch centres the viewport on the user's position.
     let panToNextFix = true;
 
     const startCompassSubscription = async () => {
@@ -2077,19 +2094,21 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       compassStarted = true;
       const granted = await requestCompassPermission();
       if (!granted) return;
-      let lastRounded = -1;
+      // Throttle: only push state when rounded heading changes by
+      // ≥ 2°. Noisy magnetometers can fire ~50 events/second; pre-
+      // rounding to 2° throttles React updates to ~5/s while keeping
+      // the marker rotation perceptibly smooth (DOM rotation is
+      // applied on every tick, only state updates throttle).
+      let lastRoundedState = -999;
       const unsub = subscribeCompass((heading, accuracy) => {
-        const marker = liveMarkerRef.current;
-        const cone = coneRef.current;
-        if (!marker || !cone) return;
-        marker.setRotation(heading);
-        cone.hidden = false;
+        const m = liveMarkerRef.current;
+        const c = coneRef.current;
+        if (!m || !c) return;
+        m.setRotation(heading);
+        c.hidden = false;
         const rounded = Math.round(heading);
-        if (rounded === lastRounded) return;
-        lastRounded = rounded;
-        // Mirror the rounded heading into React state so the bearing
-        // effect can react. Rounding to whole degrees naturally
-        // throttles re-renders to ~once per visible direction change.
+        if (Math.abs(rounded - lastRoundedState) < 2) return;
+        lastRoundedState = rounded;
         setLiveHeadingDeg(rounded);
         const accStr =
           accuracy === -1
@@ -2102,10 +2121,19 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       compassUnsubRef.current = unsub;
     };
 
+    const showMarkerAt = (lng: number, lat: number) => {
+      marker.setLngLat([lng, lat]);
+      root.style.visibility = "visible";
+    };
+
     const onGeolocate = (e: { coords: GeolocationCoordinates }) => {
-      ensureMarker(e.coords.longitude, e.coords.latitude);
+      showMarkerAt(e.coords.longitude, e.coords.latitude);
       setLivePos([e.coords.longitude, e.coords.latitude]);
       setGeoStatus(`Located · ±${Math.round(e.coords.accuracy)}m`);
+      // Kick off compass on the FIRST position lock even if the user
+      // didn't click the geolocate button (auto-trigger on app launch).
+      // On iOS the permission request will silently fail outside of a
+      // user-gesture but that's fine — the cone just stays hidden.
       if (!compassStarted) void startCompassSubscription();
       if (panToNextFix) {
         panToNextFix = false;
@@ -2121,10 +2149,15 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       setGeoStatus("Requesting location…");
     };
 
-    const onGeoError = (e: { error?: { message?: string; code?: number }; message?: string }) => {
+    const onGeoError = (e: {
+      error?: { message?: string; code?: number };
+      message?: string;
+    }) => {
       const code = e.error?.code;
       if (code === 1) {
-        setGeoStatus("Location denied. Allow in browser/iOS settings, then reload.");
+        setGeoStatus(
+          "Location denied. Allow in browser/iOS settings, then reload.",
+        );
       } else if (code === 2) {
         setGeoStatus("Location unavailable. Check signal or try again.");
       } else if (code === 3) {
@@ -2136,12 +2169,11 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     };
 
     const onTrackEnd = () => {
-      if (liveMarkerRef.current) {
-        liveMarkerRef.current.remove();
-        liveMarkerRef.current = null;
-        coneRef.current = null;
-        scalerRef.current = null;
-      }
+      // Hide the marker but keep the DOM around so re-tracking is
+      // instant — the marker just reappears at the next geolocate
+      // event without a fresh create/attach cycle.
+      root.style.visibility = "hidden";
+      if (cone) cone.hidden = true;
       if (compassUnsubRef.current) {
         compassUnsubRef.current();
         compassUnsubRef.current = null;
@@ -2158,12 +2190,12 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
     geo.on("trackuserlocationend", onTrackEnd);
     geo.on("error", onGeoError);
 
-    const btn = document.querySelector<HTMLButtonElement>(".maplibregl-ctrl-geolocate");
+    const btn = document.querySelector<HTMLButtonElement>(
+      ".maplibregl-ctrl-geolocate",
+    );
     const onBtnClick = () => {
       setGeoStatus("Requesting location…");
       void startCompassSubscription();
-      // Re-arm the pan flag so the next geolocate fix centers the viewport
-      // on the user — that's the whole point of the crosshair tap.
       panToNextFix = true;
     };
     btn?.addEventListener("click", onBtnClick);
@@ -2175,7 +2207,20 @@ export function LiveMap({ credentials, onOpenSettings }: Props) {
       geo.off("error", onGeoError);
       map.off("zoom", applyScale);
       btn?.removeEventListener("click", onBtnClick);
-      onTrackEnd();
+      if (compassUnsubRef.current) {
+        compassUnsubRef.current();
+        compassUnsubRef.current = null;
+      }
+      if (liveMarkerRef.current) {
+        liveMarkerRef.current.remove();
+        liveMarkerRef.current = null;
+      }
+      coneRef.current = null;
+      scalerRef.current = null;
+      setLivePos(null);
+      setLiveHeadingDeg(null);
+      setGeoStatus(null);
+      setGeoHeading(null);
     };
   }, []);
 
