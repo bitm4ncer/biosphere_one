@@ -1340,27 +1340,34 @@ function removeNaturaLayer(map: MLMap) {
 
 // ESA WorldCover 2021 — global 10 m land-cover map (11 classes
 // including cropland, tree cover, grassland, urban, water). Served by
-// VITO TerraScope as an open WMS, no auth.
+// VITO TerraScope, no auth.
+//
+// NOTE: TerraScope retired the legacy WMS (services.terrascope.be/wms/v2)
+// in January 2026 in favour of WMTS v2, which is why the old GetMap/BBOX
+// request silently stopped returning tiles. We now request XYZ tiles from
+// the WMTS v2 KVP endpoint. The EPSG:3857 tile matrix set identifies its
+// zoom levels as "EPSG:3857:{z}", so TileMatrix carries the {z} token while
+// TileCol/TileRow map to {x}/{y} — a standard 256 px web-mercator grid.
 const LAND_COVER_ATTRIBUTION =
   '<a href="https://esa-worldcover.org" target="_blank" rel="noreferrer">ESA WorldCover 2021</a> · 10 m global land cover';
 
-const LAND_COVER_WMS_URL = "https://services.terrascope.be/wms/v2";
+const LAND_COVER_WMTS_URL = "https://services.terrascope.be/wmts/v2";
 const LAND_COVER_LAYER_NAME = "WORLDCOVER_2021_MAP";
 
 function landCoverTileUrl(): string {
   const params = new URLSearchParams({
-    SERVICE: "WMS",
-    REQUEST: "GetMap",
-    VERSION: "1.1.1",
-    LAYERS: LAND_COVER_LAYER_NAME,
-    STYLES: "",
+    SERVICE: "WMTS",
+    REQUEST: "GetTile",
+    VERSION: "1.0.0",
+    LAYER: LAND_COVER_LAYER_NAME,
+    STYLE: "",
     FORMAT: "image/png",
-    TRANSPARENT: "true",
-    SRS: "EPSG:3857",
-    WIDTH: "512",
-    HEIGHT: "512",
+    TILEMATRIXSET: "EPSG:3857",
   });
-  return `${LAND_COVER_WMS_URL}?${params.toString()}&BBOX={bbox-epsg-3857}`;
+  return (
+    `${LAND_COVER_WMTS_URL}?${params.toString()}` +
+    `&TILEMATRIX=EPSG:3857:{z}&TILECOL={x}&TILEROW={y}`
+  );
 }
 
 function ensureLandCoverLayer(
@@ -1373,7 +1380,7 @@ function ensureLandCoverLayer(
   map.addSource(LAND_COVER_SOURCE_ID, {
     type: "raster",
     tiles: [landCoverTileUrl()],
-    tileSize: 512,
+    tileSize: 256,
     attribution: LAND_COVER_ATTRIBUTION,
   });
   map.addLayer(
